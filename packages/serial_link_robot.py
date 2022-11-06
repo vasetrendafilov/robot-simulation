@@ -15,8 +15,9 @@ class SerialLinkRobot:
         self.robot = None
         self.offset = offset
         self.orientation = orientation
-        self.reset()
         self.connect()
+        self.reset()
+       
 
     
     def reset(self):
@@ -26,46 +27,70 @@ class SerialLinkRobot:
         self.joint_variables = []
         self.subs_joints = []
         self.subs_additional = []
-        if self.robot:
-            p.removeBody(self.robot)
+        self.joint_sliders= []
+        self.joint_ids = []
+        self.joint_axes = []
 
     def connect(self):
         p.connect(p.GUI)
-        p.configureDebugVisualizer(lightPosition= (0,0,10))
-        p.setAdditionalSearchPath(os.getcwd())
-        p.resetDebugVisualizerCamera( cameraDistance=15, cameraYaw=15, cameraPitch=-20, cameraTargetPosition=[0,0,0])
-        p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS,0)
+        self.configuration()
+        
 
     def interact(self):
-        self.reset
+
         subs = self.subs_joints + self.subs_additional
         DH_params = sp.Matrix(self.links).subs(subs).evalf()
         dh2urdf = DH2Urdf(DH_params.tolist(),self.constraints)
         dh2urdf.save_urdf('outfile.urdf')
         self.robot = p.loadURDF("outfile.urdf", self.offset, self.orientation, useFixedBase=True)
-        parameters = []
-        joints = []
-        for i in range(p.getNumJoints(0)):
+        self.add_joint_sliders()
+        self.add_joint_frame_lines()
+        self.step()
+
+
+    def add_joint_sliders(self):
+        for i in range(p.getNumJoints(self.robot)):
             joint_info = p.getJointInfo(0,i)
             if joint_info[2] == p.JOINT_PRISMATIC:
-                joints.append(i)
+                self.joint_ids.append(i)
                 p.resetJointState(0,i,0)
-                parameters.append((False,p.addUserDebugParameter("D"+str(i),joint_info[8],joint_info[9],1)))
+                self.joint_sliders.append((False,p.addUserDebugParameter(f"D{i}",joint_info[8],joint_info[9],joint_info[8])))
             if joint_info[2] == p.JOINT_REVOLUTE:
-                joints.append(i)
+                self.joint_ids.append(i)
                 p.resetJointState(0,i,0)
-                parameters.append((True,p.addUserDebugParameter("Theta"+str(i),np.rad2deg(joint_info[8]),np.rad2deg(joint_info[9]),0)))
+                self.joint_sliders.append((True,p.addUserDebugParameter(f"Theta{i}",np.rad2deg(joint_info[8]),np.rad2deg(joint_info[9]),0)))
+    
+    def add_joint_frame_lines(self):
+        for joint_id in self.joint_ids:
+            self.subs_joints[joint_id//2] = self.subs_joints[joint_id//2][0], p.getJointState(self.robot,joint_id)[0]
 
-        timeStep=1./60.
-        p.setTimeStep(timeStep)
-        p.setGravity(0,-9.8,0)
-        
-        while (1):
+        for joint in range(0,p.getNumJoints(0),2):
+            transform = self.get_dh_joint_to_joint(joint//2,joint//2+1).subs(self.subs_joints+self.subs_additional).evalf()
+            line_n, line_o, line_a = frame_lines(transform, 1)
+            self.joint_axes.append(p.addUserDebugLine([item for sublist in line_n[:,0].tolist() for item in sublist], 
+                [item for sublist in line_n[:,1].tolist() for item in sublist],
+                parentObjectUniqueId=0,parentLinkIndex=joint,lineColorRGB=(1,0,0), lineWidth = 2))
+            self.joint_axes.append(p.addUserDebugLine([item for sublist in line_a[:,0].tolist() for item in sublist],
+                [item for sublist in line_a[:,1].tolist() for item in sublist],
+                parentObjectUniqueId=0,parentLinkIndex=joint,lineColorRGB=(0,0,1), lineWidth = 2))
+
+    def step(self):
+        while (p.isConnected()):
             p.stepSimulation()
-            targets = [(np.deg2rad(p.readUserDebugParameter(parameter)) if revolute else p.readUserDebugParameter(parameter)) for revolute,parameter in parameters]
-            p.setJointMotorControlArray(0,joints,p.POSITION_CONTROL,targets)
-            time.sleep(timeStep)
+            targets = [(np.deg2rad(p.readUserDebugParameter(parameter)) if revolute else p.readUserDebugParameter(parameter)) for revolute,parameter in self.joint_sliders]
+            p.setJointMotorControlArray(0,self.joint_ids,p.POSITION_CONTROL,targets)
+            time.sleep(self.timeStep)
 
+    def configuration(self):
+        self.timeStep=1./60.
+        p.setTimeStep(self.timeStep)
+        p.setGravity(0,-9.8,0)
+        p.configureDebugVisualizer(lightPosition= (0,0,10))
+        p.setAdditionalSearchPath(os.getcwd())
+        p.resetDebugVisualizerCamera( cameraDistance=15, cameraYaw=15, cameraPitch=-20, cameraTargetPosition=[0,0,0])
+        #p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS,0)
+    
+    
     def add_revolute_joint(self, theta, d, a, alpha, lower = -np.pi, upper = np.pi,velocity = 2.6, effort = 10):
         """
         Add a revolute joint to the robotic arm according to the DH convention.
