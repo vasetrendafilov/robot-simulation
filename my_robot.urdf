@@ -71,7 +71,7 @@
 		<child link='l1'/>
 		<axis xyz='0 0 1'/>
 		<origin rpy='1.57079632679490 0 0' xyz='0 0 2.00000000000000'/>
-		<limit effort='10' lower='0.7' upper='4' velocity='2.6'/>
+		<limit effort='10' lower='0.8' upper='4' velocity='2.6'/>
 	</joint>
 	<link name='a2'>
 		<visual>
