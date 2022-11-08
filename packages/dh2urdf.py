@@ -16,6 +16,9 @@ class DH2Urdf(object):
             self.xml += "\t{}, {}\n".format(self.joint_names[int(DH_param[0])],str(DH_param[1:])[1:-1])
         self.xml += "-->\n"
 
+        self.DH_Params.append((4,0,0,0,0)) #add fixed joint for inverse kinematics   
+        self.constraints.append([True]) 
+        
         self.xml += "<robot name='robot'>\n"
         self.xml += "\t<material name='grey'>\n\t\t<color rgba='0.6 0.6 0.6 1'/>\n\t</material>\n"
         self.xml += "\t<material name='white'>\n\t\t<color rgba='1 1 1 1'/>\n\t</material>\n"
@@ -23,7 +26,7 @@ class DH2Urdf(object):
         for i in range(len(self.DH_Params)):
             y,z,x,r = (0,0,0,0) if i==0 else self.DH_Params[i-1][1:] # transforms [i]
             visual_shapes = [[(r,0,y), (x,0,z), 0.7, 0.43, 'grey']]
-            self.write_link(f'a{i}', visual_shapes)
+            self.write_link(f'a{i}', visual_shapes, self.constraints[i][-1])
             if (i != 0):
                 self.write_joint(f'fix_a{i}_to_l{i-1}', 4, f'l{i-1}', f'a{i}', (0,0,0), (0,0,0))
             
@@ -44,7 +47,7 @@ class DH2Urdf(object):
             if (self.DH_Params[i][0] == 1): 
                 visual_shapes.append([(0,0,0), (0,0,-(self.constraints[i][2]/2-0.275)), self.constraints[i][2], 0.3, 'white'])
 
-            self.write_link(f'l{i}',visual_shapes)
+            self.write_link(f'l{i}',visual_shapes, self.constraints[i][-1])
             self.write_joint(f'move_l{i}_from_a{i}',self.DH_Params[i][0],f'a{i}',f'l{i}', (r,0,y),(x,0,z),self.constraints[i])
             
         self.xml += "</robot>\n"
@@ -77,7 +80,7 @@ class DH2Urdf(object):
         self.xml += "\t\t<axis xyz='0 0 1'/>\n"
         self.xml += "\t\t<origin rpy='{} {} {}' xyz='{} {} {}'/>\n".format(
             rpy[0], rpy[1], rpy[2], xyz[0], xyz[1], xyz[2], prec=precision)
-        if constraints:
+        if joint_type != 4: #fixed
             self.xml += "\t\t<limit effort='{}' lower='{}' upper='{}' velocity='{}'/>\n".format(
                 constraints[0], constraints[1], constraints[2], constraints[3], prec=precision)
         self.xml += "\t</joint>\n" 
