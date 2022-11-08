@@ -11,9 +11,13 @@ class DH2Urdf(object):
     def save_urdf(self, file_name):
         file = open("{}".format(file_name), "w")
         
-        self.xml = "<!-- DH Parameters \n"
-        for DH_param in self.DH_Params:
-            self.xml += "\t{}, {}\n".format(self.joint_names[int(DH_param[0])],str(DH_param[1:])[1:-1])
+        self.xml = "<!-- DH Parameters and constraints\n"
+        names_list = ['Name','theta','d','a','alpha','effort','lower','upper','velocity','visual']
+        row_format = "{!s:>10s}" * (len(names_list))
+        self.xml += row_format.format(*names_list)+str('\n')
+        for DH_param, constraint in zip(self.DH_Params, self.constraints):
+            a = [self.joint_names[int(DH_param[0])]] + [round(float(i),4)for i in DH_param[1:]] + [round(i,4)for i in constraint]
+            self.xml += row_format.format(*a)+str('\n')
         self.xml += "-->\n"
 
         self.DH_Params.append((4,0,0,0,0)) #add fixed joint for inverse kinematics   

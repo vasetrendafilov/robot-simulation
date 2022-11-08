@@ -1,10 +1,11 @@
-<!-- DH Parameters 
-	revolute, 0, 1.00000000000000, 0, 0
-	prismatic, 0, 0, 0, -1.57079632679490
-	prismatic, 0, 0, 0, 0
-	revolute, 0, 0, 0, 1.57079632679490
-	revolute, 0, 0, 0, -1.57079632679490
-	revolute, 0, 0, 0, 0
+<!-- DH Parameters and constraints
+      Name     theta         d         a     alpha    effort     lower     upper  velocity    visual
+  revolute       0.0       1.0       0.0       0.0        10   -3.1416    3.1416       2.6         1
+ prismatic       0.0       0.0       0.0   -1.5708        10       0.8         4       2.6         1
+ prismatic       0.0       0.0       0.0       0.0        10       0.8         4       2.6         1
+  revolute       0.0       0.0       0.0    1.5708        10        -3         3       2.6         1
+  revolute       0.0       0.0       0.0   -1.5708        10        -3         3       2.6         1
+  revolute       0.0       0.0       2.0       0.0        10        -3         3       2.6         1
 -->
 <robot name='robot'>
 	<material name='grey'>
@@ -143,7 +144,7 @@
 		<child link='l3'/>
 		<axis xyz='0 0 1'/>
 		<origin rpy='0 0 0' xyz='0 0 0'/>
-		<limit effort='10' lower='-3.141592653589793' upper='3.141592653589793' velocity='2.6'/>
+		<limit effort='10' lower='-3' upper='3' velocity='2.6'/>
 	</joint>
 	<link name='a4'>
 		<visual>
@@ -174,7 +175,7 @@
 		<child link='l4'/>
 		<axis xyz='0 0 1'/>
 		<origin rpy='1.57079632679490 0 0' xyz='0 0 0'/>
-		<limit effort='10' lower='-3.141592653589793' upper='3.141592653589793' velocity='2.6'/>
+		<limit effort='10' lower='-3' upper='3' velocity='2.6'/>
 	</joint>
 	<link name='a5'>
 		<visual>
@@ -193,9 +194,9 @@
 	</joint>
 	<link name='l5'>
 		<visual>
-			<origin rpy='0 0 0' xyz='0.0 0.0 0.0'/>
+			<origin rpy='-0.0 1.5707963267948966 0.0' xyz='1.0 0.0 0.0'/>
 			<geometry>
-				<cylinder length='0.0' radius='0.3'/>
+				<cylinder length='2.0' radius='0.3'/>
 			</geometry>
 			<material name='white'/>
 		</visual>
@@ -205,11 +206,11 @@
 		<child link='l5'/>
 		<axis xyz='0 0 1'/>
 		<origin rpy='-1.57079632679490 0 0' xyz='0 0 0'/>
-		<limit effort='10' lower='-3.141592653589793' upper='3.141592653589793' velocity='2.6'/>
+		<limit effort='10' lower='-3' upper='3' velocity='2.6'/>
 	</joint>
 	<link name='a6'>
 		<visual>
-			<origin rpy='0 0 0' xyz='0 0 0'/>
+			<origin rpy='0 0 0' xyz='2.00000000000000 0 0'/>
 			<geometry>
 				<cylinder length='0.7' radius='0.43'/>
 			</geometry>
@@ -235,6 +236,6 @@
 		<parent link='a6'/>
 		<child link='l6'/>
 		<axis xyz='0 0 1'/>
-		<origin rpy='0 0 0' xyz='0 0 0'/>
+		<origin rpy='0 0 0' xyz='2.00000000000000 0 0'/>
 	</joint>
 </robot>
