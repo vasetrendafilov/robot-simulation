@@ -33,11 +33,12 @@ class SerialLinkRobot:
     A class to easily create and interact with robotic arm.
     """
     
-    def __init__(self, offset = (0,0,0), orientation = (0,0,0,1), name = 'my_robot', time_step = None):
+    def __init__(self, offset = (0,0,0), orientation = (0,0,0,1), name = 'my_robot', time_step = None, calculate_ik = None):
         self.name = name
         self.robot = None
         self.offset = offset
         self.orientation = orientation
+        self.calculate_ik = calculate_ik
         #sympy vars
         self.links = []
         self.constraints = []
@@ -48,42 +49,196 @@ class SerialLinkRobot:
         self.joint_ids = []
         self.joint_frames = []
         self.is_imported = False
-        self.use_orientation = False
+        self.use_orientation_ik = False
+        self.use_numerical_ik = True
+        # drawing trajectory
+        self.hasPrevPose = False
+        self.prevPose = self.prevPose1 = [0,0,0]
 
         if not p.isConnected():
             sim = PybulletSimulation()
             if sim.connect():
                 self.time_step = sim.time_step
         else:
-            self.time_step = time_step 
+            self.time_step = time_step
 
-    def interact(self, kinematics = 'forward', use_orientation = False, dynamically = True):
+
+    def write_text(self,text,ofset):
+        for letter in text:
+            self.write_letter(letter,ofset)
+            ofset[1]-=0.25
+
+    def write_letter(self,letter,pos):
+        # frame of the letter i 1x1 
+        if letter == 'T':
+            #(pocx, pocy,po so da odi i koja nasoka, kolku da otide)
+            comands = [(0,1,'1 0',np.arange(0.0,1.0,0.05)),(0.5,0,'0 1',np.arange(0.0,1.0,0.05))]
+        elif letter == 'E':
+            comands = [(0,1,'1 0',np.arange(0.0,1.0,0.05)),(0,0.5,'1 0',np.arange(0.0,1.0,0.05)),
+            (0,0,'1 0',np.arange(0.0,1.0,0.05)),(0,0,'0 1',np.arange(0.0,1.0,0.05))]
+        elif letter == 'I':
+            comands = [(0.5,0,'0 1',np.arange(0.0,1.0,0.05)),(0.2,0,'1 0',np.arange(0.0,0.6,0.05)),(0.2,1,'1 0',np.arange(0.0,0.6,0.05))]
+        elif letter == 'L':
+            comands = [(0,0,'0 1',np.arange(0.0,1.0,0.05)),(0,0,'1 0',np.arange(0.0,1.0,0.05))]
+        elif letter == 'H':
+            comands = [(0,0,'0 1',np.arange(0.0,1.0,0.05)),(1,0,'0 1',np.arange(0.0,1.0,0.05)),(0,0.5,'1 0',np.arange(0.0,1.0,0.05))]
+        elif letter == 'F':
+            self.move((pos[0],    pos[1],pos[2], 0,0,0),(2+pos[0],pos[1],pos[2], 0,0,0),'linear',30)
+            self.move((2+pos[0],pos[1],pos[2], 0,0,0),(2+pos[0],-1.5+pos[1],pos[2], 0,0,0),'linear',15)
+            self.move((1+pos[0],pos[1],pos[2], 0,0,0),(1+pos[0],-1.5+pos[1],pos[2], 0,0,0),'linear',15)
+            return True
+        elif letter == 'N':
+            comands = [(0,0,'0 1',np.arange(0.0,1.0,0.05)),(1,0,'0 1',np.arange(0.0,1.0,0.05)),(0,1,'1 -1',np.arange(0.0,1.0,0.05))]
+        elif letter == 'M':
+            comands = [(0,0,'0 1',np.arange(0.0,1.0,0.05)),(1,0,'0 1',np.arange(0.0,1.0,0.05)),
+            (0,1,'1 -1',np.arange(0.0,0.5,0.05)),(0.5,0.5,'1 1',np.arange(0.0,0.5,0.05))]
+        elif letter == 'X':
+            comands = [(0,1,'1 -1',np.arange(0.0,1.0,0.05)),(0,0,'1 1',np.arange(0.0,1.0,0.05))]
+        elif letter == 'V':
+            comands = [(0,1,'0.5 -1',np.arange(0.0,1,0.05)),(0.5,0,'0.5 1',np.arange(0.0,1,0.05))]
+        elif letter == 'A':
+            comands = [(0,0,'0.5 1',np.arange(0.0,1,0.05)),(0.5,1,'0.5 -1',np.arange(0.0,1,0.05)),(0.3,0.5,'1 0',np.arange(0.0,0.5,0.05))]
+        elif letter == 'D':
+            self.move((pos[0],pos[1],pos[2], 0,0,180),(0.2+pos[0],pos[1],pos[2], 0,0,180),'linear',20,(0.2,0.15,1,1))
+            self.move((0.2+pos[0],pos[1],pos[2], 0,0,180),(0.2+pos[0],-0.03+pos[1],pos[2], 0,0,180),'linear',5,(0.2,0.15,1,1))
+            self.move((0.2+pos[0],-0.03+pos[1],pos[2], 0,0,180),(pos[0],-0.03+pos[1],pos[2], 0,0,180),'circular',40,(0.1,0.1,0,1))
+            self.move((pos[0],-0.03+pos[1],pos[2], 0,0,180),(pos[0],pos[1],pos[2], 0,0,180),'linear',5,(0.2,0.15,1,1))
+            return True
+               
+    def move2point(self,position,orientation=None,dynamically = True):
+        """
+        Move to a desired position and rotation of robot. 
+        Parameters
+        ----------
+        position: tuple()
+            Set (x,y,z) coordinates.
+        rotation: tuple()
+            Set (R,P,Y) angles.
+        """
+      
+        steps = 0 # temporary not good with dynamicly
+        while (p.isConnected() and steps<5):
+            p.stepSimulation() 
+            steps+=1
+            if self.use_numerical_ik:
+                joint_targets = p.calculateInverseKinematics(self.robot,self.joint_ids[-1]+2, position, 
+                    p.getQuaternionFromEuler(orientation), maxNumIterations=5)
+            else:
+                joint_targets = self.calculate_ik(position, orientation)
+            
+            if dynamically:
+                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets,forces=[500]*len(joint_targets))
+            else:
+                for i,joint_id in enumerate(self.joint_ids):
+                    p.resetJointState(self.robot,joint_id,joint_targets[i])
+
+            pos = p.getLinkState(0,self.joint_ids[-1]+2,computeForwardKinematics = True)[4]
+            p.addUserDebugText(f"{pos[0]:.2f},{pos[1]:.2f},{pos[2]:.2f}", [0.7, 0.7, 0.7],textColorRGB=[1, 0, 0],textSize=1.3,
+                parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2,replaceItemUniqueId =  self.end_pose_param)
+
+            if (self.hasPrevPose):
+                p.addUserDebugLine(self.prevPose, position, [0, 0, 0.3], 1, 15)
+                p.addUserDebugLine(self.prevPose1, pos, [1, 0, 0], 1, 15)
+            self.prevPose = position
+            self.prevPose1 = pos
+            self.hasPrevPose = True
+            time.sleep(self.time_step)
+        return True
+        
+
+    def move(self,start,end,interpolation='linear',steps=30,param=None,closed=False):
+        """
+        Move to a desired position and rotation of robot. 
+        Parameters
+        ----------
+        position: tuple()
+            Set (x,y,z) cordinates.
+        rotation: tuple()
+            Set (R,P,Y) angles.
+        interpolation: string
+            Oprions: linear / circular.
+        steps: int
+            Number of points generated.
+        param: tuple()
+            Set (a,b,res_num,side):
+            - a,b are aparameters for the elipse
+            - res_num is to chose witch solution you like 0 or 1
+            - side is to chose witch path to take 0 or 1
+        closed: bool
+            To draw the whole elipse
+        """
+        self.hasPrevPose = False
+        x1,y1,z1,R1,P1,Y1 = start
+        x2,y2,z2,R2,P2,Y2 = end
+        if interpolation == 'linear':
+            for x,y,z,R,P,Y in zip(np.linspace(x1,x2,steps),np.linspace(y1,y2,steps),np.linspace(z1,z2,steps),
+                                   np.linspace(R1,R2,steps),np.linspace(P1,P2,steps),np.linspace(Y1,Y2,steps)):
+                if not self.move2point((x,y,z),(R,P,Y)):
+                    return False
+        elif interpolation == 'circular' and param != None:
+            xs,ys = sp.symbols('xs,ys')
+            a,b,res_num,side = param
+    
+            eq1 = sp.Eq((xs-x1)**2/a**2+(ys-y1)**2/b**2,1)
+            eq2 = sp.Eq((xs-x2)**2/a**2+(ys-y2)**2/b**2,1)
+            results = sp.solve([eq1,eq2],(xs,ys))
+            if not all(x[0].is_real or x[1].is_real for x in results): 
+                print("Нема решение на центарот за тие a,b")
+                return False
+
+            x_center,y_center = results[res_num]
+            res_t = [-np.arccos(float((x1-x_center)/a)) + 2*np.pi, np.arccos(float((x1-x_center)/a))]
+            start_angle = [t for t in res_t if np.around(float(y_center + b*np.sin(t)),3) == np.around(y1,3)][0]
+            res_t = [-np.arccos(float((x2-x_center)/a)) + 2*np.pi, np.arccos(float((x2-x_center)/a))]
+            end_angle = [t for t in res_t if np.around(float(y_center + b*np.sin(t)),3) == np.around(y2,3)][0]
+            
+            if side:
+                t = np.linspace(start_angle, end_angle, steps)
+            else:
+                if start_angle < end_angle:
+                    t = np.hstack((np.linspace(start_angle, 0,int(steps*start_angle/(2*np.pi-end_angle+start_angle)) ),
+                    np.linspace(2*np.pi, end_angle, int(steps*(2*np.pi-end_angle)/(2*np.pi-end_angle+start_angle)) )))
+                else:
+                    t = np.hstack((np.linspace(start_angle, 2*np.pi, int(steps*(2*np.pi-start_angle)/(2*np.pi-start_angle+end_angle)) ),
+                    np.linspace(0, end_angle, int(steps*end_angle/(2*np.pi-start_angle+end_angle)) )))
+            
+            if closed:
+                start_angle, end_angle = (0,2*np.pi) if dir else (2*np.pi,0)
+
+            for x,y,z,R,P,Y in zip(x_center + a*np.cos(t),y_center + b*np.sin(t),np.linspace(z1, z2, steps),
+                                np.linspace(R1,R2,steps),np.linspace(P1,P2,steps),np.linspace(Y1,Y2,steps)):
+                if not self.move2point((x,y,z),(R,P,Y)):
+                    return False 
+
+    def interact(self, kinematics = 'forward', use_orientation_ik = False, dynamically = True):
         self.kinematics = kinematics
-        self.use_orientation = use_orientation
+        self.use_orientation_ik = use_orientation_ik
+        self.load_robot()
+        if self.kinematics == 'forward':
+            self.add_joint_sliders()
+        else:
+            self.add_pose_sliders() 
+        self.step(dynamically)
+  
+    def load_robot(self):
         if not self.is_imported:
             subs = self.subs_joints + self.subs_additional
             DH_params = sp.Matrix(self.links).subs(subs).evalf()
             dh2urdf = DH2Urdf(DH_params.tolist(),self.constraints)
             dh2urdf.save_urdf(self.name+'.urdf')
-        self.load_robot()
-        self.reset_joints()
-        self.step(dynamically)
-  
-    def load_robot(self):
         self.robot = p.loadURDF(self.name+'.urdf', self.offset, self.orientation, useFixedBase=True)
         self.joint_ids = [i for i in range(p.getNumJoints(self.robot)) if (p.getJointInfo(self.robot,i)[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE])]
         self.add_joint_frame_lines()
-        if self.kinematics == 'forward':
-            self.add_joint_sliders()
-        else:
-            self.add_pose_sliders() 
+        self.reset_joints()
+        self.end_pose_param = p.addUserDebugText("1,1,2", [0.7, 0.7, 0.7],textColorRGB=[1, 0, 0],
+            textSize= 1.3,parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2)
 
     def add_pose_sliders(self):
         self.pose_sliders = []
         self.pose_sliders.append(p.addUserDebugParameter(f"x",-5,5,1))
         self.pose_sliders.append(p.addUserDebugParameter(f"y",-5,5,1))
         self.pose_sliders.append(p.addUserDebugParameter(f"z",-5,5,2))
-        if self.use_orientation:
+        if self.use_orientation_ik:
             #if True not in [item.is_number for sublist in self.get_dh_matrix()[:3,:3].tolist() for item in sublist]: ubavo no sporo 
             self.pose_sliders.append(p.addUserDebugParameter(f"R",-180, 180, 0))
             self.pose_sliders.append(p.addUserDebugParameter(f"P",-180, 180, 0))
@@ -121,16 +276,20 @@ class SerialLinkRobot:
                 joint_targets = [(np.deg2rad(p.readUserDebugParameter(parameter)) if revolute else p.readUserDebugParameter(parameter)) for revolute,parameter in self.joint_sliders]
             else:
                 position = (p.readUserDebugParameter(self.pose_sliders[0]),p.readUserDebugParameter(self.pose_sliders[1]),p.readUserDebugParameter(self.pose_sliders[2]))
-                if self.use_orientation:
+                if self.use_orientation_ik:
                     orientation = p.getQuaternionFromEuler([np.deg2rad(p.readUserDebugParameter(self.pose_sliders[3])),
                         np.deg2rad(p.readUserDebugParameter(self.pose_sliders[4])),
                         np.deg2rad(p.readUserDebugParameter(self.pose_sliders[5]))])
-                    joint_targets = p.calculateInverseKinematics(self.robot,self.joint_ids[-1]+2, position, orientation, maxNumIterations=5)
+                
+                if self.use_numerical_ik:
+                    joint_targets = p.calculateInverseKinematics(self.robot,self.joint_ids[-1]+2, position, 
+                        orientation if self.use_orientation_ik else None, maxNumIterations=5)
                 else:
-                    joint_targets = p.calculateInverseKinematics(self.robot,self.joint_ids[-1]+2, position, maxNumIterations=5)
+                    joint_targets = self.calculate_ik(position, orientation if self.use_orientation_ik else None)
+                
             
             if dynamically:
-                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets,forces=[500]*len(joint_targets))
+                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets)#,forces=[500]*len(joint_targets))
             else:
                 for i,joint_id in enumerate(self.joint_ids):
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
@@ -162,7 +321,7 @@ class SerialLinkRobot:
                 self.add_prismatic_joint(float(dh_list[1]),sp.symbols(f'd{i+1}'),float(dh_list[3]),float(dh_list[4]),
                     float(dh_list[6]),float(dh_list[7]),float(dh_list[8]),float(dh_list[5]),int(dh_list[9]))
             else:
-                self.add_fixed_joint(float(dh_list[1]),float(dh_list[2]),float(dh_list[3]),float(dh_list[4]),int(dh_list[5]))
+                self.add_fixed_joint(float(dh_list[1]),float(dh_list[2]),float(dh_list[3]),float(dh_list[4]),int(dh_list[9]))
 
     def add_revolute_joint(self, theta, d, a, alpha, lower = -np.pi, upper = np.pi,velocity = 2.6, effort = 10, visual = True):
         """
@@ -221,9 +380,11 @@ class SerialLinkRobot:
         ...
         :param alpha: the angle of rotation around x-axis.
         :type alpha: number or Symbol
-        """
+        """       
+    
         self.links.append([p.JOINT_FIXED, theta, d, a, alpha])
-        self.constraints.append([visual])
+        self.subs_joints.append((sp.symbols('temp'+str(np.random.random(1)[0]*100)), 0))
+        self.constraints.append([0,0,0,0,visual])
     
     def add_subs(self, subs):
         """
