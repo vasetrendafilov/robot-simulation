@@ -33,12 +33,12 @@ class SerialLinkRobot:
     A class to easily create and interact with robotic arm.
     """
     
-    def __init__(self, offset = (0,0,0), orientation = (0,0,0,1), name = 'my_robot', time_step = None, calculate_ik = None):
+    def __init__(self, offset = (0,0,0), orientation = (0,0,0,1), name = 'my_robot', time_step = None, ik_function = None):
         self.name = name
         self.robot = None
         self.offset = offset
         self.orientation = orientation
-        self.calculate_ik = calculate_ik
+        self.ik_function = ik_function
         #sympy vars
         self.links = []
         self.constraints = []
@@ -50,10 +50,10 @@ class SerialLinkRobot:
         self.joint_frames = []
         self.is_imported = False
         self.use_orientation_ik = False
-        self.use_numerical_ik = True
+        self.pos_param, self.orn_param = None,None
         # drawing trajectory
         self.hasPrevPose = False
-        self.prevPose = self.prevPose1 = [0,0,0]
+        self.prevPose1 = self.prevPose2 = [0,0,0]
 
         if not p.isConnected():
             sim = PybulletSimulation()
@@ -105,7 +105,7 @@ class SerialLinkRobot:
             self.move((pos[0],-0.03+pos[1],pos[2], 0,0,180),(pos[0],pos[1],pos[2], 0,0,180),'linear',5,(0.2,0.15,1,1))
             return True
                
-    def move2point(self,position,orientation=None,dynamically = True):
+    def move2point(self,position,orientation=None, converge = 10, dynamically = True):
         """
         Move to a desired position and rotation of robot. 
         Parameters
@@ -116,33 +116,34 @@ class SerialLinkRobot:
             Set (R,P,Y) angles.
         """
       
-        steps = 0 # temporary not good with dynamicly
-        while (p.isConnected() and steps<5):
+        steps = 0 # temporary not good with dynamically
+        while (p.isConnected()):
             p.stepSimulation() 
             steps+=1
-            if self.use_numerical_ik:
+        
+            if self.ik_function:
+                joint_targets = self.ik_function(position, orientation)
+            else:  
                 joint_targets = p.calculateInverseKinematics(self.robot,self.joint_ids[-1]+2, position, 
                     p.getQuaternionFromEuler(orientation), maxNumIterations=5)
-            else:
-                joint_targets = self.calculate_ik(position, orientation)
             
             if dynamically:
-                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets,forces=[500]*len(joint_targets))
+                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets,
+                targetVelocities = [0]*len(joint_targets),forces=[500]*len(joint_targets))#,positionGains = [1]*len(joint_targets),velocityGains = [0.1]*len(joint_targets))
             else:
                 for i,joint_id in enumerate(self.joint_ids):
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
-
+            
             pos = p.getLinkState(0,self.joint_ids[-1]+2,computeForwardKinematics = True)[4]
-            p.addUserDebugText(f"{pos[0]:.2f},{pos[1]:.2f},{pos[2]:.2f}", [0.7, 0.7, 0.7],textColorRGB=[1, 0, 0],textSize=1.3,
-                parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2,replaceItemUniqueId =  self.end_pose_param)
+            self.display_pos_and_orn(p.getLinkState(self.robot,self.joint_ids[-1]+2))
 
-            if (self.hasPrevPose):
-                p.addUserDebugLine(self.prevPose, position, [0, 0, 0.3], 1, 15)
-                p.addUserDebugLine(self.prevPose1, pos, [1, 0, 0], 1, 15)
-            self.prevPose = position
-            self.prevPose1 = pos
-            self.hasPrevPose = True
+            self.draw_trajectory(position,pos)
             time.sleep(self.time_step)
+
+            if dynamically and np.allclose([p.getJointState(self.robot,joint_id)[0] for joint_id in self.joint_ids],joint_targets,0.01*(steps/converge)):
+                break
+            elif not dynamically and steps > 1:
+                break
         return True
         
 
@@ -230,8 +231,29 @@ class SerialLinkRobot:
         self.joint_ids = [i for i in range(p.getNumJoints(self.robot)) if (p.getJointInfo(self.robot,i)[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE])]
         self.add_joint_frame_lines()
         self.reset_joints()
-        self.end_pose_param = p.addUserDebugText("1,1,2", [0.7, 0.7, 0.7],textColorRGB=[1, 0, 0],
-            textSize= 1.3,parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2)
+    
+    def display_pos_and_orn(self,link):
+        x,y,z = link[4]
+        R,P,Y = np.rad2deg(p.getEulerFromQuaternion(link[5]))
+        if not self.pos_param and not self.orn_param:
+            self.pos_param = p.addUserDebugText(f"{x:.2f},{y:.2f},{z:.2f}", [0.7, 0.7, 0.7],textColorRGB=[1, 0, 0],
+                textSize= 1.3,parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2)
+            self.orn_param = p.addUserDebugText(f"{R:.1f},{P:.1f},{Y:.1f}", [0.7, 0.7, 1],textColorRGB=[1, 0, 0],
+                textSize= 1.3,parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2)
+
+        p.addUserDebugText(f"{x:.2f},{y:.2f},{z:.2f}", [0.7, 0.7, 0.7],textColorRGB=[1, 0, 0],textSize= 1.3,
+            parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2, replaceItemUniqueId = self.pos_param)
+        p.addUserDebugText(f"{R:.1f},{P:.1f},{Y:.1f}", [0.7, 0.7, 1],textColorRGB=[1, 0, 0],textSize= 1.3,
+            parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2, replaceItemUniqueId = self.orn_param)
+
+
+    def draw_trajectory(self,target,current, lifeTime = 15):
+        if (self.hasPrevPose):
+            p.addUserDebugLine(self.prevPose1, target, [0, 0, 0.3], 1, lifeTime)
+            p.addUserDebugLine(self.prevPose2, current, [1, 0, 0] , 1, lifeTime)
+        self.prevPose1 = target
+        self.prevPose2 = current
+        self.hasPrevPose = True 
 
     def add_pose_sliders(self):
         self.pose_sliders = []
@@ -268,8 +290,6 @@ class SerialLinkRobot:
                 lineColorRGB=(0,0,1) if p.getNumJoints(self.robot)-3 != joint else (1,1,0), lineWidth = 2))
 
     def step(self,dynamically = True):
-        end_pose_param = p.addUserDebugText("1,1,2", [0.7, 0.7, 0.7],textColorRGB=[1, 0, 0],
-            textSize= 1.3,parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2)
         while (p.isConnected()):
             p.stepSimulation()
             if self.kinematics == 'forward':
@@ -281,22 +301,19 @@ class SerialLinkRobot:
                         np.deg2rad(p.readUserDebugParameter(self.pose_sliders[4])),
                         np.deg2rad(p.readUserDebugParameter(self.pose_sliders[5]))])
                 
-                if self.use_numerical_ik:
+                if self.ik_function:
+                    joint_targets = self.ik_function(position, orientation if self.use_orientation_ik else None)
+                else:
                     joint_targets = p.calculateInverseKinematics(self.robot,self.joint_ids[-1]+2, position, 
                         orientation if self.use_orientation_ik else None, maxNumIterations=5)
-                else:
-                    joint_targets = self.calculate_ik(position, orientation if self.use_orientation_ik else None)
                 
-            
             if dynamically:
                 p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets)#,forces=[500]*len(joint_targets))
             else:
                 for i,joint_id in enumerate(self.joint_ids):
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
 
-            x,y,z = p.getLinkState(0,self.joint_ids[-1]+2)[4]
-            p.addUserDebugText(f"{x:.2f},{y:.2f},{z:.2f}", [0.7, 0.7, 0.7],textColorRGB=[1, 0, 0],textSize=1.3,
-                parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2,replaceItemUniqueId = end_pose_param)
+            self.display_pos_and_orn(p.getLinkState(self.robot,self.joint_ids[-1]+2))
             time.sleep(self.time_step)
     
     def reset_joints(self):
@@ -323,7 +340,7 @@ class SerialLinkRobot:
             else:
                 self.add_fixed_joint(float(dh_list[1]),float(dh_list[2]),float(dh_list[3]),float(dh_list[4]),int(dh_list[9]))
 
-    def add_revolute_joint(self, theta, d, a, alpha, lower = -np.pi, upper = np.pi,velocity = 2.6, effort = 10, visual = True):
+    def add_revolute_joint(self, theta, d, a, alpha, lower = -180, upper = 180, velocity = 2.6, effort = 10, visual = True):
         """
         Add a revolute joint to the robotic arm according to the DH convention.
     
@@ -342,7 +359,7 @@ class SerialLinkRobot:
         self.links.append([p.JOINT_REVOLUTE, theta, d, a, alpha])
         self.joint_variables.append(theta)
         self.subs_joints.append((theta, 0))
-        self.constraints.append([effort, lower, upper, velocity, visual])
+        self.constraints.append([effort, np.deg2rad(lower), np.deg2rad(upper), velocity, visual])
 
     def add_prismatic_joint(self, theta, d, a, alpha, lower = 0.8, upper = 4, velocity = 2.6, effort = 10, visual = True):
         """
