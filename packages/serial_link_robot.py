@@ -2,6 +2,8 @@ from packages.utils import *
 from packages.dh2urdf import *
 import sympy as sp
 import numpy as np
+import struct
+import glob
 import os
 import pybullet as p
 import time 
@@ -46,11 +48,12 @@ class SerialLinkRobot:
         self.subs_joints = []
         self.subs_additional = []
         #pybullet vars
+        self.log, self.record_param = None,None
         self.joint_ids = []
         self.joint_frames = []
         self.is_imported = False
         self.use_orientation_ik = False
-        self.pos_param, self.orn_param = None,None
+        self.pose_param = None
         # drawing trajectory
         self.hasPrevPose = False
         self.prevPose1 = self.prevPose2 = [0,0,0]
@@ -61,7 +64,6 @@ class SerialLinkRobot:
                 self.time_step = sim.time_step
         else:
             self.time_step = time_step
-
 
     def write_text(self,text,ofset):
         for letter in text:
@@ -134,10 +136,10 @@ class SerialLinkRobot:
                 for i,joint_id in enumerate(self.joint_ids):
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
             
-            pos = p.getLinkState(0,self.joint_ids[-1]+2,computeForwardKinematics = True)[4]
-            self.display_pos_and_orn(p.getLinkState(self.robot,self.joint_ids[-1]+2))
+            link_state = p.getLinkState(self.robot,self.joint_ids[-1]+2,computeForwardKinematics = True)
+            self.display_pos_and_orn(link_state[4],link_state[5],self.joint_ids[-1]+2)
+            self.draw_trajectory(position,link_state[4])
 
-            self.draw_trajectory(position,pos)
             time.sleep(self.time_step)
 
             if dynamically and np.allclose([p.getJointState(self.robot,joint_id)[0] for joint_id in self.joint_ids],joint_targets,0.01*(steps/converge)):
@@ -146,28 +148,28 @@ class SerialLinkRobot:
                 break
         return True
         
-
-    def move(self,start,end,interpolation='linear',steps=30,param=None,closed=False):
+    def move(self,start,end,interpolation='linear',steps=30,param=None,closed=False,log_move = False):
         """
         Move to a desired position and rotation of robot. 
         Parameters
         ----------
         position: tuple()
-            Set (x,y,z) cordinates.
+            Set (x,y,z) coordinates.
         rotation: tuple()
             Set (R,P,Y) angles.
         interpolation: string
-            Oprions: linear / circular.
+            Options: linear / circular.
         steps: int
             Number of points generated.
         param: tuple()
             Set (a,b,res_num,side):
-            - a,b are aparameters for the elipse
+            - a,b are parameters for the ellipse
             - res_num is to chose witch solution you like 0 or 1
             - side is to chose witch path to take 0 or 1
         closed: bool
             To draw the whole elipse
         """
+        if log_move:    self.state_logging(f"{interpolation}_{start}_{end}",start_stop=True)
         self.hasPrevPose = False
         x1,y1,z1,R1,P1,Y1 = start
         x2,y2,z2,R2,P2,Y2 = end
@@ -209,7 +211,8 @@ class SerialLinkRobot:
             for x,y,z,R,P,Y in zip(x_center + a*np.cos(t),y_center + b*np.sin(t),np.linspace(z1, z2, steps),
                                 np.linspace(R1,R2,steps),np.linspace(P1,P2,steps),np.linspace(Y1,Y2,steps)):
                 if not self.move2point((x,y,z),(R,P,Y)):
-                    return False 
+                    return False
+        if log_move:   self.state_logging("",start_stop=False) 
 
     def interact(self, kinematics = 'forward', use_orientation_ik = False, dynamically = True):
         self.kinematics = kinematics
@@ -232,24 +235,19 @@ class SerialLinkRobot:
         self.add_joint_frame_lines()
         self.reset_joints()
     
-    def display_pos_and_orn(self,link):
-        x,y,z = link[4]
-        R,P,Y = np.rad2deg(p.getEulerFromQuaternion(link[5]))
-        if not self.pos_param and not self.orn_param:
-            self.pos_param = p.addUserDebugText(f"{x:.2f},{y:.2f},{z:.2f}", [0.7, 0.7, 0.7],textColorRGB=[1, 0, 0],
-                textSize= 1.3,parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2)
-            self.orn_param = p.addUserDebugText(f"{R:.1f},{P:.1f},{Y:.1f}", [0.7, 0.7, 1],textColorRGB=[1, 0, 0],
-                textSize= 1.3,parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2)
-
-        p.addUserDebugText(f"{x:.2f},{y:.2f},{z:.2f}", [0.7, 0.7, 0.7],textColorRGB=[1, 0, 0],textSize= 1.3,
-            parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2, replaceItemUniqueId = self.pos_param)
-        p.addUserDebugText(f"{R:.1f},{P:.1f},{Y:.1f}", [0.7, 0.7, 1],textColorRGB=[1, 0, 0],textSize= 1.3,
-            parentObjectUniqueId=self.robot,parentLinkIndex=self.joint_ids[-1]+2, replaceItemUniqueId = self.orn_param)
-
-
-    def draw_trajectory(self,target,current, lifeTime = 15):
+    def display_pos_and_orn(self, position, orientation, link_id):
+        x,y,z = position
+        R,P,Y = np.rad2deg(p.getEulerFromQuaternion(orientation))
+        if not self.pose_param:
+            self.pose_param =  p.addUserDebugText(f"(x:{x:.2f} y:{y:.2f} z:{z:.2f}) (R:{R:.1f} P:{P:.1f} Y:{Y:.1f})", [0.5, 0, 0.5],textColorRGB=[0, 0, 0],
+                textSize= 1,parentObjectUniqueId=self.robot,parentLinkIndex=link_id)       
+        p.addUserDebugText(f"(x:{x:.2f} y:{y:.2f} z:{z:.2f}) (R:{R:.1f} P:{P:.1f} Y:{Y:.1f})", [0.5, 0, 0.5],textColorRGB=[0, 0, 0],textSize= 1,
+            parentObjectUniqueId=self.robot,parentLinkIndex=link_id, replaceItemUniqueId = self.pose_param)
+     
+    def draw_trajectory(self, target, current, lifeTime = 15):
         if (self.hasPrevPose):
-            p.addUserDebugLine(self.prevPose1, target, [0, 0, 0.3], 1, lifeTime)
+            if target:
+                p.addUserDebugLine(self.prevPose1, target, [0, 0, 0.3], 1, lifeTime)
             p.addUserDebugLine(self.prevPose2, current, [1, 0, 0] , 1, lifeTime)
         self.prevPose1 = target
         self.prevPose2 = current
@@ -293,8 +291,10 @@ class SerialLinkRobot:
         while (p.isConnected()):
             p.stepSimulation()
             if self.kinematics == 'forward':
-                joint_targets = [(np.deg2rad(p.readUserDebugParameter(parameter)) if revolute else p.readUserDebugParameter(parameter)) for revolute,parameter in self.joint_sliders]
-            else:
+                position = None
+                joint_targets = [(np.deg2rad(p.readUserDebugParameter(parameter)) if revolute else p.readUserDebugParameter(parameter)) 
+                                    for revolute,parameter in self.joint_sliders]
+            elif self.kinematics == 'inverse':
                 position = (p.readUserDebugParameter(self.pose_sliders[0]),p.readUserDebugParameter(self.pose_sliders[1]),p.readUserDebugParameter(self.pose_sliders[2]))
                 if self.use_orientation_ik:
                     orientation = p.getQuaternionFromEuler([np.deg2rad(p.readUserDebugParameter(self.pose_sliders[3])),
@@ -313,14 +313,100 @@ class SerialLinkRobot:
                 for i,joint_id in enumerate(self.joint_ids):
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
 
-            self.display_pos_and_orn(p.getLinkState(self.robot,self.joint_ids[-1]+2))
+            link_state = p.getLinkState(self.robot,self.joint_ids[-1]+2,computeForwardKinematics = True)
+            #self.display_pos_and_orn(link_state[4],link_state[5],self.joint_ids[-1]+2)
+            self.draw_trajectory(position,link_state[4],5)
+            self.state_logging(self.kinematics)
             time.sleep(self.time_step)
-    
+
+    def state_logging(self, log_name, object_ids = None, start_stop = None):
+        if object_ids is None:
+            object_ids = [self.robot]
+
+        if start_stop is None:
+            if self.record_param is None:
+                self.record_param = p.addUserDebugParameter("Start/Stop Logging",1,0,1)
+            else:
+                if p.readUserDebugParameter(self.record_param) %2 == 0: # start
+                    if self.log is None: # once
+                        if not os.path.exists(os.getcwd()+f'\\{self.name}_logs\\'):
+                            os.mkdir(os.getcwd()+f'\\{self.name}_logs\\')
+                        self.log = p.startStateLogging(p.STATE_LOGGING_GENERIC_ROBOT,
+                            f"{self.name}_logs/{log_name}_{int(p.readUserDebugParameter(self.record_param)//2)}.txt", object_ids)
+                elif self.log is not None:
+                    p.stopStateLogging(self.log)
+                    self.log = None
+        else:
+            if start_stop is True: # start
+                if not os.path.exists(os.getcwd()+f'\\{self.name}_logs\\'):
+                    os.mkdir(os.getcwd()+f'\\{self.name}_logs\\')
+                self.log = p.startStateLogging(p.STATE_LOGGING_GENERIC_ROBOT,f"{self.name}_logs/move_{log_name}.txt", object_ids)
+            else:
+                p.stopStateLogging(self.log)
+
     def reset_joints(self):
         """ Reset the robotic arm """
         for joint_id in self.joint_ids:
             p.resetJointState(self.robot,joint_id,
-            self.constraints[joint_id//2][1] if self.links[joint_id//2][0] == p.JOINT_PRISMATIC else 0) 
+            self.constraints[joint_id//2][1] if self.links[joint_id//2][0] == p.JOINT_PRISMATIC else 0)
+
+    def replay_logs(self, log_name, object_ids = None, dynamically = True):
+        if object_ids is None:
+            object_ids = [self.robot]
+        log = []
+        for log_name_index in sorted(glob.glob(os.getcwd()+f'\\{self.name}_logs\\'+f"{log_name}*.txt"), key=os.path.getmtime):
+            log += self.readLogFile(log_name_index)
+        recordNum = len(log)
+        objectNum = len(object_ids)
+        stepIndexId = p.addUserDebugParameter("Replay Step", 0, recordNum / objectNum - 1, 0)
+        while (p.isConnected()):
+            stepIndex = int(p.readUserDebugParameter(stepIndexId))
+            p.stepSimulation()
+            for objectId in range(objectNum):
+                record = log[stepIndex * objectNum + objectId]
+                Id = record[2]
+                pos = [record[3], record[4], record[5]]
+                orn = [record[6], record[7], record[8], record[9]]
+                p.resetBasePositionAndOrientation(Id, pos, orn)
+                numJoints = p.getNumJoints(Id)
+                for i in range(numJoints):
+                    jointInfo = p.getJointInfo(Id, i)
+                    qIndex = jointInfo[3]
+                    if qIndex > -1:
+                        if dynamically:
+                            p.setJointMotorControl2(Id, i, p.POSITION_CONTROL, record[qIndex - 7 + 17])
+                        else:
+                            p.resetJointState(Id, i, record[qIndex - 7 + 17])       
+            time.sleep(self.time_step)
+
+    def readLogFile(self, filename, verbose=False):
+        f = open(filename, 'rb')
+        keys = f.readline().decode('utf8').rstrip('\n').split(',')
+        fmt = f.readline().decode('utf8').rstrip('\n')
+        # The byte number of one record
+        sz = struct.calcsize(fmt)
+        # The type number of one record
+        ncols = len(fmt)
+
+        if verbose:
+            print(f'Keys{keys}')
+            print(f"Format: {fmt}")
+            print(f'Size: {sz}')
+            print(f'Columns: {ncols}')
+
+        # Read data
+        wholeFile = f.read()
+        # split by alignment word
+        chunks = wholeFile.split(b'\xaa\xbb')
+        log = []
+        for chunk in chunks:
+            if len(chunk) == sz:
+                values = struct.unpack(fmt, chunk)
+                record = []
+                for i in range(ncols):
+                    record.append(values[i])
+                log.append(record)
+        return log
 
     def import_robot(self,file_name = 'my_robot'):
         self.name = file_name
