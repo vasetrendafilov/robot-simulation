@@ -107,7 +107,7 @@ class SerialLinkRobot:
             self.move((pos[0],-0.03+pos[1],pos[2], 0,0,180),(pos[0],pos[1],pos[2], 0,0,180),'linear',5,(0.2,0.15,1,1))
             return True
                
-    def move2point(self,position,orientation=None, converge = 10, dynamically = True):
+    def move2point(self,position,orientation=None, converge = 10, dynamically = False):
         """
         Move to a desired position and rotation of robot. 
         Parameters
@@ -142,13 +142,13 @@ class SerialLinkRobot:
 
             time.sleep(self.time_step)
 
-            if dynamically and np.allclose([p.getJointState(self.robot,joint_id)[0] for joint_id in self.joint_ids],joint_targets,0.01*(steps/converge)):
+            if dynamically and np.allclose([p.getJointState(self.robot,joint_id)[0] for joint_id in self.joint_ids],joint_targets,0.05*(steps/converge)):
                 break
             elif not dynamically and steps > 1:
                 break
         return True
         
-    def move(self,start,end,interpolation='linear',steps=30,param=None,closed=False,log_move = False):
+    def move(self, start, end, plane = (0,0,0), interpolation='linear',steps=30,param=None,closed=False,log_move = False):
         """
         Move to a desired position and rotation of robot. 
         Parameters
@@ -173,6 +173,7 @@ class SerialLinkRobot:
         self.hasPrevPose = False
         x1,y1,z1,R1,P1,Y1 = start
         x2,y2,z2,R2,P2,Y2 = end
+        rot_mat = rotation_matrix_from_euler_angles(plane,'xyz')
         if interpolation == 'linear':
             for x,y,z,R,P,Y in zip(np.linspace(x1,x2,steps),np.linspace(y1,y2,steps),np.linspace(z1,z2,steps),
                                    np.linspace(R1,R2,steps),np.linspace(P1,P2,steps),np.linspace(Y1,Y2,steps)):
@@ -195,6 +196,9 @@ class SerialLinkRobot:
             res_t = [-np.arccos(float((x2-x_center)/a)) + 2*np.pi, np.arccos(float((x2-x_center)/a))]
             end_angle = [t for t in res_t if np.around(float(y_center + b*np.sin(t)),3) == np.around(y2,3)][0]
             
+            if closed:
+                start_angle, end_angle = (0,2*np.pi) if side else (2*np.pi,0)
+
             if side:
                 t = np.linspace(start_angle, end_angle, steps)
             else:
@@ -205,12 +209,11 @@ class SerialLinkRobot:
                     t = np.hstack((np.linspace(start_angle, 2*np.pi, int(steps*(2*np.pi-start_angle)/(2*np.pi-start_angle+end_angle)) ),
                     np.linspace(0, end_angle, int(steps*end_angle/(2*np.pi-start_angle+end_angle)) )))
             
-            if closed:
-                start_angle, end_angle = (0,2*np.pi) if dir else (2*np.pi,0)
+            
 
             for x,y,z,R,P,Y in zip(x_center + a*np.cos(t),y_center + b*np.sin(t),np.linspace(z1, z2, steps),
                                 np.linspace(R1,R2,steps),np.linspace(P1,P2,steps),np.linspace(Y1,Y2,steps)):
-                if not self.move2point((x,y,z),(R,P,Y)):
+                if not self.move2point(self.project_point_to_plane(rot_mat,(x,y,z)),(R,P,Y)):
                     return False
         if log_move:   self.state_logging("",start_stop=False) 
 
@@ -425,6 +428,10 @@ class SerialLinkRobot:
                     float(dh_list[6]),float(dh_list[7]),float(dh_list[8]),float(dh_list[5]),int(dh_list[9]))
             else:
                 self.add_fixed_joint(float(dh_list[1]),float(dh_list[2]),float(dh_list[3]),float(dh_list[4]),int(dh_list[9]))
+    
+    def project_point_to_plane(self, rot_mat, point):
+        x,y,z = point
+        return x * rot_mat[:3, 0] + y * rot_mat[:3, 1] + z * rot_mat[:3, 2]
 
     def add_revolute_joint(self, theta, d, a, alpha, lower = -180, upper = 180, velocity = 2.6, effort = 10, visual = True):
         """

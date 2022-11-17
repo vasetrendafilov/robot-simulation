@@ -1,7 +1,11 @@
 <!-- DH Parameters and constraints
       Name     theta         d         a     alpha    effort     lower     upper  velocity    visual
-  revolute       0.0       2.0       3.0       0.0        10   -3.1416    3.1416       2.6         1
-  revolute       0.0       0.0       3.0   -1.5708        10   -2.0944    2.0944       2.6         1
+  revolute       0.0       1.0       0.0       0.0        10   -3.1416    3.1416       2.6         1
+ prismatic       0.0       0.0       0.0   -1.5708        10       0.8         4       2.6         1
+ prismatic       0.0       0.0       0.0       0.0        10       0.8         4       2.6         1
+  revolute       0.0       0.1       0.0    1.5708        10   -3.1416    3.1416       2.6         1
+  revolute       0.0       0.0       0.1   -1.5708        10   -3.1416    3.1416       2.6         1
+  revolute       0.0       0.0       2.0       0.0        10   -3.1416    3.1416       2.6         1
 -->
 <robot name='robot'>
 	<material name='grey'>
@@ -21,9 +25,9 @@
 	</link>
 	<link name='l0'>
 		<visual>
-			<origin rpy='-0.0 0.982793723247329 0.0' xyz='1.5 0.0 1.0'/>
+			<origin rpy='-0.0 0.0 0.0' xyz='0.0 0.0 0.5'/>
 			<geometry>
-				<cylinder length='3.605551275463989' radius='0.3'/>
+				<cylinder length='1.0' radius='0.3'/>
 			</geometry>
 			<material name='white'/>
 		</visual>
@@ -37,7 +41,7 @@
 	</joint>
 	<link name='a1'>
 		<visual>
-			<origin rpy='0 0 0' xyz='3.00000000000000 0 2.00000000000000'/>
+			<origin rpy='0 0 0' xyz='0 0 1.00000000000000'/>
 			<geometry>
 				<cylinder length='0.7' radius='0.43'/>
 			</geometry>
@@ -52,23 +56,30 @@
 	</joint>
 	<link name='l1'>
 		<visual>
-			<origin rpy='-0.0 1.5707963267948966 0.0' xyz='1.5 0.0 0.0'/>
+			<origin rpy='0 0 0' xyz='0.0 0.0 0.0'/>
 			<geometry>
-				<cylinder length='3.0' radius='0.3'/>
+				<cylinder length='0.0' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+		<visual>
+			<origin rpy='0 0 0' xyz='0 0 -1.725'/>
+			<geometry>
+				<cylinder length='4' radius='0.3'/>
 			</geometry>
 			<material name='white'/>
 		</visual>
 	</link>
-	<joint name='move_l1_from_a1' type='revolute'>
+	<joint name='move_l1_from_a1' type='prismatic'>
 		<parent link='a1'/>
 		<child link='l1'/>
 		<axis xyz='0 0 1'/>
-		<origin rpy='0 0 0' xyz='3.00000000000000 0 2.00000000000000'/>
-		<limit effort='10' lower='-2.0943951023931953' upper='2.0943951023931953' velocity='2.6'/>
+		<origin rpy='0 0 0' xyz='0 0 1.00000000000000'/>
+		<limit effort='10' lower='0.8' upper='4' velocity='2.6'/>
 	</joint>
 	<link name='a2'>
 		<visual>
-			<origin rpy='-1.57079632679490 0 0' xyz='3.00000000000000 0 0'/>
+			<origin rpy='-1.57079632679490 0 0' xyz='0 0 0'/>
 			<geometry>
 				<cylinder length='0.7' radius='0.43'/>
 			</geometry>
@@ -89,11 +100,142 @@
 			</geometry>
 			<material name='white'/>
 		</visual>
+		<visual>
+			<origin rpy='0 0 0' xyz='0 0 -1.725'/>
+			<geometry>
+				<cylinder length='4' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
 	</link>
-	<joint name='move_l2_from_a2' type='fixed'>
+	<joint name='move_l2_from_a2' type='prismatic'>
 		<parent link='a2'/>
 		<child link='l2'/>
 		<axis xyz='0 0 1'/>
-		<origin rpy='-1.57079632679490 0 0' xyz='3.00000000000000 0 0'/>
+		<origin rpy='-1.57079632679490 0 0' xyz='0 0 0'/>
+		<limit effort='10' lower='0.8' upper='4' velocity='2.6'/>
+	</joint>
+	<link name='a3'>
+		<visual>
+			<origin rpy='0 0 0' xyz='0 0 0'/>
+			<geometry>
+				<cylinder length='0.7' radius='0.43'/>
+			</geometry>
+			<material name='grey'/>
+		</visual>
+	</link>
+	<joint name='fix_a3_to_l2' type='fixed'>
+		<parent link='l2'/>
+		<child link='a3'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+	</joint>
+	<link name='l3'>
+		<visual>
+			<origin rpy='-0.0 0.0 0.0' xyz='0.0 0.0 0.05'/>
+			<geometry>
+				<cylinder length='0.1' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+	</link>
+	<joint name='move_l3_from_a3' type='revolute'>
+		<parent link='a3'/>
+		<child link='l3'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+		<limit effort='10' lower='-3.141592653589793' upper='3.141592653589793' velocity='2.6'/>
+	</joint>
+	<link name='a4'>
+		<visual>
+			<origin rpy='1.57079632679490 0 0' xyz='0 0 0.100000000000000'/>
+			<geometry>
+				<cylinder length='0.7' radius='0.43'/>
+			</geometry>
+			<material name='grey'/>
+		</visual>
+	</link>
+	<joint name='fix_a4_to_l3' type='fixed'>
+		<parent link='l3'/>
+		<child link='a4'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+	</joint>
+	<link name='l4'>
+		<visual>
+			<origin rpy='-0.0 1.5707963267948966 0.0' xyz='0.05 0.0 0.0'/>
+			<geometry>
+				<cylinder length='0.1' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+	</link>
+	<joint name='move_l4_from_a4' type='revolute'>
+		<parent link='a4'/>
+		<child link='l4'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='1.57079632679490 0 0' xyz='0 0 0.100000000000000'/>
+		<limit effort='10' lower='-3.141592653589793' upper='3.141592653589793' velocity='2.6'/>
+	</joint>
+	<link name='a5'>
+		<visual>
+			<origin rpy='-1.57079632679490 0 0' xyz='0.100000000000000 0 0'/>
+			<geometry>
+				<cylinder length='0.7' radius='0.43'/>
+			</geometry>
+			<material name='grey'/>
+		</visual>
+	</link>
+	<joint name='fix_a5_to_l4' type='fixed'>
+		<parent link='l4'/>
+		<child link='a5'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+	</joint>
+	<link name='l5'>
+		<visual>
+			<origin rpy='-0.0 1.5707963267948966 0.0' xyz='1.0 0.0 0.0'/>
+			<geometry>
+				<cylinder length='2.0' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+	</link>
+	<joint name='move_l5_from_a5' type='revolute'>
+		<parent link='a5'/>
+		<child link='l5'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='-1.57079632679490 0 0' xyz='0.100000000000000 0 0'/>
+		<limit effort='10' lower='-3.141592653589793' upper='3.141592653589793' velocity='2.6'/>
+	</joint>
+	<link name='a6'>
+		<visual>
+			<origin rpy='0 0 0' xyz='2.00000000000000 0 0'/>
+			<geometry>
+				<cylinder length='0.7' radius='0.43'/>
+			</geometry>
+			<material name='grey'/>
+		</visual>
+	</link>
+	<joint name='fix_a6_to_l5' type='fixed'>
+		<parent link='l5'/>
+		<child link='a6'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+	</joint>
+	<link name='l6'>
+		<visual>
+			<origin rpy='0 0 0' xyz='0.0 0.0 0.0'/>
+			<geometry>
+				<cylinder length='0.0' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+	</link>
+	<joint name='move_l6_from_a6' type='fixed'>
+		<parent link='a6'/>
+		<child link='l6'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='2.00000000000000 0 0'/>
 	</joint>
 </robot>
