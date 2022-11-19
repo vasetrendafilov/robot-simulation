@@ -21,7 +21,7 @@ class PybulletSimulation:
         p.setAdditionalSearchPath(os.getcwd())
         
         p.configureDebugVisualizer(lightPosition= (0,0,10))
-        p.resetDebugVisualizerCamera( cameraDistance=15, cameraYaw=15, cameraPitch=-20, cameraTargetPosition=[0,0,0])
+        p.resetDebugVisualizerCamera( cameraDistance=10, cameraYaw=15, cameraPitch=-20, cameraTargetPosition=[0,0,0])
         #p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS,0)
 
     def connect(self):
@@ -48,12 +48,17 @@ class SerialLinkRobot:
         self.subs_joints = []
         self.subs_additional = []
         #pybullet vars
+    
         self.log, self.record_param = None,None
         self.joint_ids = []
         self.joint_frames = []
         self.is_imported = False
         self.use_orientation_ik = False
         self.pose_param = None
+        # attachemt vars
+        self.attachment = None
+        self.attachment_param = None
+        self.attachment_joint_ids = []
         # drawing trajectory
         self.hasPrevPose = False
         self.prevPose1 = self.prevPose2 = [0,0,0]
@@ -221,6 +226,17 @@ class SerialLinkRobot:
         self.kinematics = kinematics
         self.use_orientation_ik = use_orientation_ik
         self.load_robot()
+        import pybullet_data as pd
+        p.setAdditionalSearchPath(pd.getDataPath())
+        flags = p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
+        legos=[]
+        p.loadURDF("tray/traybox.urdf", [0, 0, -1.6], [0,0,0,1], flags=flags,globalScaling=4 )
+        legos.append(p.loadURDF("lego/lego.urdf",np.array([0.1, 0.3, -0.5]), flags=flags,globalScaling=10 ))
+        #legos.append(p.loadURDF("lego/lego.urdf",np.array([-0.1, 0.3, -0.5]), flags=flags,globalScaling=10 ))
+        legos.append(p.loadURDF("lego/lego.urdf",np.array([0.1, 0.3, -0.7]), flags=flags,globalScaling=10 ))
+        #sphereId = p.loadURDF("sphere_small.urdf",np.array( [0, 0.3, -0.6]), flags=flags,globalScaling=4 )
+        #p.loadURDF("sphere_small.urdf",np.array( [0, 0.3, -0.5]), flags=flags,globalScaling=4 )
+        #p.loadURDF("sphere_small.urdf",np.array( [0, 0.3, -0.7]), flags=flags,globalScaling=4 )
         if self.kinematics == 'forward':
             self.add_joint_sliders()
         else:
@@ -231,10 +247,20 @@ class SerialLinkRobot:
         if not self.is_imported:
             subs = self.subs_joints + self.subs_additional
             DH_params = sp.Matrix(self.links).subs(subs).evalf()
-            dh2urdf = DH2Urdf(DH_params.tolist(),self.constraints)
+            dh2urdf = DH2Urdf(DH_params.tolist(),self.constraints,self.attachment)
             dh2urdf.save_urdf(self.name+'.urdf')
         self.robot = p.loadURDF(self.name+'.urdf', self.offset, self.orientation, useFixedBase=True)
-        self.joint_ids = [i for i in range(p.getNumJoints(self.robot)) if (p.getJointInfo(self.robot,i)[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE])]
+
+        once = False
+        for i in range(p.getNumJoints(self.robot)): 
+            if p.getJointInfo(self.robot,i)[1] == b'attachment_joint' or once:
+                once = True
+                if (p.getJointInfo(self.robot,i)[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE]):
+                    self.attachment_joint_ids.append(i)   
+            else:
+                if (p.getJointInfo(self.robot,i)[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE]):
+                    self.joint_ids.append(i)   
+
         self.add_joint_frame_lines()
         self.reset_joints()
     
@@ -269,7 +295,7 @@ class SerialLinkRobot:
 
     def add_joint_sliders(self):
         self.joint_sliders = []
-        for i in range(p.getNumJoints(self.robot)):
+        for i in self.joint_ids:
             joint_info = p.getJointInfo(self.robot,i)
             if joint_info[2] == p.JOINT_PRISMATIC:
                 self.joint_sliders.append((False,p.addUserDebugParameter(f"D{i}",joint_info[8],joint_info[9],joint_info[8])))
@@ -280,15 +306,15 @@ class SerialLinkRobot:
         for joint_id in self.joint_ids:
             self.subs_joints[joint_id//2] = self.subs_joints[joint_id//2][0], p.getJointState(self.robot,joint_id)[0]
 
-        for joint in range(0,p.getNumJoints(self.robot)-2,2):
+        for joint in range(0,self.joint_ids[-1]+2,2):
             transform = self.get_dh_joint_to_joint(joint//2,joint//2+1).subs(self.subs_joints+self.subs_additional).evalf()
             line_n, line_o, line_a = frame_lines(transform, 0.8)
             self.joint_frames.append(p.addUserDebugLine([item for sublist in line_n[:,0].tolist() for item in sublist], 
                 [item for sublist in line_n[:,1].tolist() for item in sublist],parentObjectUniqueId=0,parentLinkIndex=joint,
-                lineColorRGB=(1,0,0) if p.getNumJoints(self.robot)-3 != joint else (0,1,1), lineWidth = 2))
+                lineColorRGB=(1,0,0) if self.joint_ids[-1] != joint else (0,1,1), lineWidth = 2))
             self.joint_frames.append(p.addUserDebugLine([item for sublist in line_a[:,0].tolist() for item in sublist],
                 [item for sublist in line_a[:,1].tolist() for item in sublist],parentObjectUniqueId=0,parentLinkIndex=joint,
-                lineColorRGB=(0,0,1) if p.getNumJoints(self.robot)-3 != joint else (1,1,0), lineWidth = 2))
+                lineColorRGB=(0,0,1) if self.joint_ids[-1] != joint else (1,1,0), lineWidth = 2))
 
     def step(self,dynamically = True):
         while (p.isConnected()):
@@ -308,19 +334,36 @@ class SerialLinkRobot:
                     joint_targets = self.ik_function(position, orientation if self.use_orientation_ik else None)
                 else:
                     joint_targets = p.calculateInverseKinematics(self.robot,self.joint_ids[-1]+2, position, 
-                        orientation if self.use_orientation_ik else None, maxNumIterations=5)
-                
+                        orientation if self.use_orientation_ik else None, maxNumIterations=5)[:len(self.joint_ids)]
+
             if dynamically:
                 p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets)#,forces=[500]*len(joint_targets))
             else:
                 for i,joint_id in enumerate(self.joint_ids):
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
+            
+            self.actuate_attachment(self.attachment_joint_ids)
 
             link_state = p.getLinkState(self.robot,self.joint_ids[-1]+2,computeForwardKinematics = True)
             #self.display_pos_and_orn(link_state[4],link_state[5],self.joint_ids[-1]+2)
             self.draw_trajectory(position,link_state[4],5)
             self.state_logging(self.kinematics)
             time.sleep(self.time_step)
+
+    def actuate_attachment(self, joint_ids, joint_targets = None):
+        if joint_targets is None:
+            joint_targets = [0,0]
+            if self.attachment_param is None:
+                self.attachment_param = p.addUserDebugParameter("Open/Close Gripper",1,0,1)
+            else:
+                if p.readUserDebugParameter(self.attachment_param) %2 == 0: # close 
+                    joint_targets = [0.2,-0.2]
+                else:
+                    joint_targets = [0,0]
+        #if p.getJointState(self.robot,joint_ids[0])[3] > 200 and  p.getJointState(self.robot,joint_ids[1])[3] > 200:
+        #    joint_targets = (p.getJointState(self.robot,joint_ids[0])[0],p.getJointState(self.robot,joint_ids[1])[0])
+        p.setJointMotorControlArray(self.robot,joint_ids,p.POSITION_CONTROL,joint_targets, forces=[50]*len(joint_ids))
+
 
     def state_logging(self, log_name, object_ids = None, start_stop = None):
         if object_ids is None:
@@ -433,6 +476,9 @@ class SerialLinkRobot:
         x,y,z = point
         return x * rot_mat[:3, 0] + y * rot_mat[:3, 1] + z * rot_mat[:3, 2]
 
+    def add_attachment(self, name = 'gripper', orientation = (-np.pi/2,0,0), position = (0,0,0.3)):
+        self.attachment = [name,orientation,position]
+
     def add_revolute_joint(self, theta, d, a, alpha, lower = -180, upper = 180, velocity = 2.6, effort = 10, visual = True):
         """
         Add a revolute joint to the robotic arm according to the DH convention.
@@ -454,7 +500,7 @@ class SerialLinkRobot:
         self.subs_joints.append((theta, 0))
         self.constraints.append([effort, np.deg2rad(lower), np.deg2rad(upper), velocity, visual])
 
-    def add_prismatic_joint(self, theta, d, a, alpha, lower = 0.8, upper = 4, velocity = 2.6, effort = 10, visual = True):
+    def add_prismatic_joint(self, theta, d, a, alpha, lower = 0.8, upper = 3, velocity = 2.6, effort = 10, visual = True):
         """
         Add a prismatic joint to the robotic arm according to the DH convention.
     

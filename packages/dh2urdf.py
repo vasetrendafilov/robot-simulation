@@ -2,15 +2,14 @@ import numpy as np
 
 class DH2Urdf(object):
 
-    def __init__(self, DH_Params, constraints):
+    def __init__(self, DH_Params, constraints, attachment = None):
         self.joint_names = {0: 'revolute', 1: 'prismatic', 4: 'fixed'}
         self.DH_Params = DH_Params        
         self.constraints = constraints
+        self.attachment = attachment
         self.xml = ''    
 
     def save_urdf(self, file_name):
-        file = open("{}".format(file_name), "w")
-        
         self.xml = "<!-- DH Parameters and constraints\n"
         names_list = ['Name','theta','d','a','alpha','effort','lower','upper','velocity','visual']
         row_format = "{!s:>10s}" * (len(names_list))
@@ -53,8 +52,18 @@ class DH2Urdf(object):
 
             self.write_link(f'l{i}',visual_shapes, self.constraints[i][-1])
             self.write_joint(f'move_l{i}_from_a{i}',self.DH_Params[i][0],f'a{i}',f'l{i}', (r,0,y),(x,0,z),self.constraints[i])
-            
+        
+        if self.attachment:
+            name, orn, pos = self.attachment
+            self.write_joint(f'attachment_joint',4,f'l{i}',f'base', orn, pos)
+            file = open(f"attachments/{name}/{name}.urdf",'r')
+            for line in file.readlines()[1:-1]:
+                self.xml+= line
+            file.close()    
+
         self.xml += "</robot>\n"
+        
+        file = open(file_name, "w")
         file.write(self.xml)
         file.close()
 
