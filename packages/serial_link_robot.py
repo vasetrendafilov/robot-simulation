@@ -6,6 +6,7 @@ import struct
 import glob
 import os
 import pybullet as p
+import pybullet_data as pd
 import time 
 
 class PybulletSimulation:
@@ -19,8 +20,9 @@ class PybulletSimulation:
         p.setTimeStep(self.time_step)
         p.setGravity(self.gravity[0],self.gravity[1],self.gravity[2])
         p.setAdditionalSearchPath(os.getcwd())
+        p.setAdditionalSearchPath(pd.getDataPath())
         
-        p.configureDebugVisualizer(lightPosition= (0,0,10))
+        p.configureDebugVisualizer(lightPosition= (0,0,5))
         p.resetDebugVisualizerCamera( cameraDistance=10, cameraYaw=15, cameraPitch=-20, cameraTargetPosition=[0,0,0])
         #p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS,0)
 
@@ -29,6 +31,52 @@ class PybulletSimulation:
             self.configure()
             return True
         return False
+class Camera:
+    def __init__(self,cam_tar, distance, rpy, near, far, size, fov):
+        self.width, self.height = size
+        self.near, self.far = near, far
+        row,pitch,yaw = rpy
+        self.fov = fov
+
+        aspect = self.width / self.height
+        self.view_matrix = p.computeViewMatrixFromYawPitchRoll(cam_tar,distance,yaw,pitch,row,2)
+        self.projection_matrix = p.computeProjectionMatrixFOV(self.fov, aspect, self.near, self.far)
+
+        _view_matrix = np.array(self.view_matrix).reshape((4, 4), order='F')
+        _projection_matrix = np.array(self.projection_matrix).reshape((4, 4), order='F')
+        self.tran_pix_world = np.linalg.inv(_projection_matrix @ _view_matrix)
+
+    def shot(self):
+        # Get depth values using the OpenGL renderer
+        _, _, rgb, depth, seg = p.getCameraImage(self.width, self.height,self.view_matrix, self.projection_matrix)
+        self.rgb, self.depth, self.seg = rgb, depth, seg
+
+    def rgbd_2_world(self, w, h, d):
+        x = (2 * w - self.width) / self.width
+        y = -(2 * h - self.height) / self.height
+        z = 2 * d - 1
+        pix_pos = np.array((x, y, z, 1))
+        position = self.tran_pix_world @ pix_pos
+        position /= position[3]
+
+        return position[:3]
+
+    def rgbd_2_world_batch(self, depth):
+        # reference: https://stackoverflow.com/a/62247245
+        x = (2 * np.arange(0, self.width) - self.width) / self.width
+        x = np.repeat(x[None, :], self.height, axis=0)
+        y = -(2 * np.arange(0, self.height) - self.height) / self.height
+        y = np.repeat(y[:, None], self.width, axis=1)
+        z = 2 * depth - 1
+
+        pix_pos = np.array([x.flatten(), y.flatten(), z.flatten(), np.ones_like(z.flatten())]).T
+        position = self.tran_pix_world @ pix_pos.T
+        position = position.T
+        # print(position)
+
+        position[:, :] /= position[:, 3:4]
+
+        return position[:, :3].reshape(*x.shape, -1)
 
 class SerialLinkRobot:
     """
@@ -48,7 +96,6 @@ class SerialLinkRobot:
         self.subs_joints = []
         self.subs_additional = []
         #pybullet vars
-    
         self.log, self.record_param = None,None
         self.joint_ids = []
         self.joint_frames = []
@@ -62,6 +109,9 @@ class SerialLinkRobot:
         # drawing trajectory
         self.hasPrevPose = False
         self.prevPose1 = self.prevPose2 = [0,0,0]
+        self.quit_button = None
+        self.capture_image_button = None
+        self.prev_button_state = 2
 
         if not p.isConnected():
             sim = PybulletSimulation()
@@ -131,7 +181,7 @@ class SerialLinkRobot:
             if self.ik_function:
                 joint_targets = self.ik_function(position, orientation)
             else:  
-                joint_targets = p.calculateInverseKinematics(self.robot,self.joint_ids[-1]+2, position, 
+                joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, position, 
                     p.getQuaternionFromEuler(orientation), maxNumIterations=5)
             
             if dynamically:
@@ -141,8 +191,8 @@ class SerialLinkRobot:
                 for i,joint_id in enumerate(self.joint_ids):
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
             
-            link_state = p.getLinkState(self.robot,self.joint_ids[-1]+2,computeForwardKinematics = True)
-            self.display_pos_and_orn(link_state[4],link_state[5],self.joint_ids[-1]+2)
+            link_state = p.getLinkState(self.robot,self.last_joint_id,computeForwardKinematics = True)
+            self.display_pos_and_orn(link_state[4],link_state[5],self.last_joint_id)
             self.draw_trajectory(position,link_state[4])
 
             time.sleep(self.time_step)
@@ -222,12 +272,11 @@ class SerialLinkRobot:
                     return False
         if log_move:   self.state_logging("",start_stop=False) 
 
-    def interact(self, kinematics = 'forward', use_orientation_ik = False, dynamically = True):
+    def interact(self, kinematics = 'forward', use_orientation_ik = False, dynamically = True,
+                    x_range = (-5,5,1), y_range = (-5,5,1), z_range = (-5,5,1)):
         self.kinematics = kinematics
         self.use_orientation_ik = use_orientation_ik
         self.load_robot()
-        import pybullet_data as pd
-        p.setAdditionalSearchPath(pd.getDataPath())
         flags = p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
         legos=[]
         p.loadURDF("tray/traybox.urdf", [0, 0, -1.6], [0,0,0,1], flags=flags,globalScaling=4 )
@@ -240,7 +289,7 @@ class SerialLinkRobot:
         if self.kinematics == 'forward':
             self.add_joint_sliders()
         else:
-            self.add_pose_sliders() 
+            self.add_pose_sliders(x_range, y_range, z_range)           
         self.step(dynamically)
   
     def load_robot(self):
@@ -250,20 +299,25 @@ class SerialLinkRobot:
             dh2urdf = DH2Urdf(DH_params.tolist(),self.constraints,self.attachment)
             dh2urdf.save_urdf(self.name+'.urdf')
         self.robot = p.loadURDF(self.name+'.urdf', self.offset, self.orientation, useFixedBase=True)
-
-        once = False
+        self.add_joint_ids()
+        self.add_joint_frame_lines()
+        self.reset_joints()
+    
+    def add_joint_ids(self):
+        add_attachment_joints = False
         for i in range(p.getNumJoints(self.robot)): 
-            if p.getJointInfo(self.robot,i)[1] == b'attachment_joint' or once:
-                once = True
+            if p.getJointInfo(self.robot,i)[1] == b'attachment_joint' or add_attachment_joints:
+                if add_attachment_joints == False:
+                    self.last_joint_id = i-1
+                add_attachment_joints = True
                 if (p.getJointInfo(self.robot,i)[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE]):
                     self.attachment_joint_ids.append(i)   
             else:
                 if (p.getJointInfo(self.robot,i)[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE]):
                     self.joint_ids.append(i)   
+        if add_attachment_joints is False:
+            self.last_joint_id = i
 
-        self.add_joint_frame_lines()
-        self.reset_joints()
-    
     def display_pos_and_orn(self, position, orientation, link_id):
         x,y,z = position
         R,P,Y = np.rad2deg(p.getEulerFromQuaternion(orientation))
@@ -282,11 +336,11 @@ class SerialLinkRobot:
         self.prevPose2 = current
         self.hasPrevPose = True 
 
-    def add_pose_sliders(self):
+    def add_pose_sliders(self, x,y,z):
         self.pose_sliders = []
-        self.pose_sliders.append(p.addUserDebugParameter(f"x",-5,5,1))
-        self.pose_sliders.append(p.addUserDebugParameter(f"y",-5,5,1))
-        self.pose_sliders.append(p.addUserDebugParameter(f"z",-5,5,2))
+        self.pose_sliders.append(p.addUserDebugParameter(f"x",x[0],x[1],x[2]))
+        self.pose_sliders.append(p.addUserDebugParameter(f"y",y[0],y[1],y[2]))
+        self.pose_sliders.append(p.addUserDebugParameter(f"z",z[0],z[1],z[2]))
         if self.use_orientation_ik:
             #if True not in [item.is_number for sublist in self.get_dh_matrix()[:3,:3].tolist() for item in sublist]: ubavo no sporo 
             self.pose_sliders.append(p.addUserDebugParameter(f"R",-180, 180, 0))
@@ -306,15 +360,15 @@ class SerialLinkRobot:
         for joint_id in self.joint_ids:
             self.subs_joints[joint_id//2] = self.subs_joints[joint_id//2][0], p.getJointState(self.robot,joint_id)[0]
 
-        for joint in range(0,self.joint_ids[-1]+2,2):
+        for joint in range(0,self.last_joint_id,2):
             transform = self.get_dh_joint_to_joint(joint//2,joint//2+1).subs(self.subs_joints+self.subs_additional).evalf()
             line_n, line_o, line_a = frame_lines(transform, 0.8)
             self.joint_frames.append(p.addUserDebugLine([item for sublist in line_n[:,0].tolist() for item in sublist], 
                 [item for sublist in line_n[:,1].tolist() for item in sublist],parentObjectUniqueId=0,parentLinkIndex=joint,
-                lineColorRGB=(1,0,0) if self.joint_ids[-1] != joint else (0,1,1), lineWidth = 2))
+                lineColorRGB=(1,0,0) if self.last_joint_id != joint else (0,1,1), lineWidth = 2))
             self.joint_frames.append(p.addUserDebugLine([item for sublist in line_a[:,0].tolist() for item in sublist],
                 [item for sublist in line_a[:,1].tolist() for item in sublist],parentObjectUniqueId=0,parentLinkIndex=joint,
-                lineColorRGB=(0,0,1) if self.joint_ids[-1] != joint else (1,1,0), lineWidth = 2))
+                lineColorRGB=(0,0,1) if self.last_joint_id != joint else (1,1,0), lineWidth = 2))
 
     def step(self,dynamically = True):
         while (p.isConnected()):
@@ -333,7 +387,7 @@ class SerialLinkRobot:
                 if self.ik_function:
                     joint_targets = self.ik_function(position, orientation if self.use_orientation_ik else None)
                 else:
-                    joint_targets = p.calculateInverseKinematics(self.robot,self.joint_ids[-1]+2, position, 
+                    joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, position, 
                         orientation if self.use_orientation_ik else None, maxNumIterations=5)[:len(self.joint_ids)]
 
             if dynamically:
@@ -344,12 +398,26 @@ class SerialLinkRobot:
             
             self.actuate_attachment(self.attachment_joint_ids)
 
-            link_state = p.getLinkState(self.robot,self.joint_ids[-1]+2,computeForwardKinematics = True)
-            #self.display_pos_and_orn(link_state[4],link_state[5],self.joint_ids[-1]+2)
+            link_state = p.getLinkState(self.robot,self.last_joint_id,computeForwardKinematics = True)
+            
+            self.capture_image(capture_now=False)
+            #self.display_pos_and_orn(link_state[4],link_state[5],self.last_joint_id)
             self.draw_trajectory(position,link_state[4],5)
             self.state_logging(self.kinematics)
+            if self.quit_simulation():
+                break
             time.sleep(self.time_step)
-
+    
+    def quit_simulation(self):
+        if self.quit_button is None:
+            self.quit_button = p.addUserDebugParameter("Quit Simulation",1,0,1)
+        else:
+            if p.readUserDebugParameter(self.quit_button) %2 == 0: # on click
+                p.disconnect()
+                return True
+            else:
+                return False
+    
     def actuate_attachment(self, joint_ids, joint_targets = None):
         if joint_targets is None:
             joint_targets = [0,0]
@@ -357,13 +425,29 @@ class SerialLinkRobot:
                 self.attachment_param = p.addUserDebugParameter("Open/Close Gripper",1,0,1)
             else:
                 if p.readUserDebugParameter(self.attachment_param) %2 == 0: # close 
-                    joint_targets = [0.2,-0.2]
+                    joint_targets = [0.3,-0.3]
                 else:
                     joint_targets = [0,0]
-        #if p.getJointState(self.robot,joint_ids[0])[3] > 200 and  p.getJointState(self.robot,joint_ids[1])[3] > 200:
-        #    joint_targets = (p.getJointState(self.robot,joint_ids[0])[0],p.getJointState(self.robot,joint_ids[1])[0])
-        p.setJointMotorControlArray(self.robot,joint_ids,p.POSITION_CONTROL,joint_targets, forces=[50]*len(joint_ids))
-
+        p.setJointMotorControlArray(self.robot,joint_ids,p.POSITION_CONTROL,joint_targets, forces=[20]*len(joint_ids))
+    
+    def capture_image(self, link_state = None, offset_camera = (0,0,0.5), near = 0.1, far = 5, size = (320,320), fov = 40, capture_now = False):
+        if link_state is None:
+            link_state = p.getLinkState(self.robot,self.last_joint_id, computeForwardKinematics=True)
+        if capture_now is False:
+            if self.capture_image_button is None:
+                self.capture_image_button = p.addUserDebugParameter("Capture Image",1,0,1)
+            else:
+                if p.readUserDebugParameter(self.capture_image_button) == self.prev_button_state: # on click
+                    self.prev_button_state +=1
+                    capture_now = True    
+        if capture_now:
+            rot = np.array(p.getMatrixFromQuaternion(link_state[5])).reshape(3,3)
+            offset = self.project_point_to_plane(rot, offset_camera)
+            target = (link_state[4][0]+offset[0],link_state[4][1]+offset[1],link_state[4][2]+offset[2])
+            orn = p.getEulerFromQuaternion(link_state[5])
+            camera = Camera(target,0.1,(0,np.rad2deg(orn[0])+90,np.rad2deg(orn[2])), near, far, size, fov)
+            camera.shot()
+            return camera     
 
     def state_logging(self, log_name, object_ids = None, start_stop = None):
         if object_ids is None:
