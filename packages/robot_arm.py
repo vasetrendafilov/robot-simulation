@@ -13,10 +13,10 @@ class RobotArm:
     """
     A class to easily create and interact with robotic arm.
     """
-    
     def __init__(self, offset = (0,0,0), orientation = (0,0,0,1),use_dynamics = True,
-                    name = 'my_robot', time_step = 1/60, ik_function = None):
+                    name = 'my_robot', time_step = 1/60, scaling = 1, ik_function = None):
         self.name = name
+        self.file_head  = 'robot_arms/' + name
         self.robot = None
         self.offset = offset
         self.orientation = orientation
@@ -47,6 +47,7 @@ class RobotArm:
         self.quit_button = None
         self.capture_image_button = None
         self.prev_button_state = 2
+        self.scaling = scaling
 
         if not p.isConnected():
             sim = PybulletSimulation()
@@ -55,13 +56,12 @@ class RobotArm:
         else:
             self.time_step = time_step
     
-    def add_pose_sliders(self, x,y,z):
+    def add_pose_sliders(self,x,y,z):
         self.pose_sliders = []
         self.pose_sliders.append(p.addUserDebugParameter(f"x",x[0],x[1],x[2]))
         self.pose_sliders.append(p.addUserDebugParameter(f"y",y[0],y[1],y[2]))
         self.pose_sliders.append(p.addUserDebugParameter(f"z",z[0],z[1],z[2]))
         if self.use_orientation_ik:
-            #if True not in [item.is_number for sublist in self.get_dh_matrix()[:3,:3].tolist() for item in sublist]: ubavo no sporo 
             self.pose_sliders.append(p.addUserDebugParameter(f"R",-180, 180, 0))
             self.pose_sliders.append(p.addUserDebugParameter(f"P",-180, 180, 0))
             self.pose_sliders.append(p.addUserDebugParameter(f"Y",-180, 180, 0))
@@ -76,18 +76,26 @@ class RobotArm:
                 self.joint_sliders.append((True,p.addUserDebugParameter(f"Theta{i}",np.rad2deg(joint_info[8]),np.rad2deg(joint_info[9]),0)))
     
     def add_joint_frame_lines(self):
-        for joint_id in self.joint_ids:
-            self.subs_joints[joint_id//2] = self.subs_joints[joint_id//2][0], p.getJointState(self.robot,joint_id)[0]
-
-        for joint in range(0,self.last_joint_id,2):
-            transform = self.get_dh_joint_to_joint(joint//2,joint//2+1).subs(self.subs_joints+self.subs_additional).evalf()
-            line_n, line_o, line_a = frame_lines(transform, 0.8)
-            self.joint_frames.append(p.addUserDebugLine([item for sublist in line_n[:,0].tolist() for item in sublist], 
-                [item for sublist in line_n[:,1].tolist() for item in sublist],parentObjectUniqueId=self.robot,parentLinkIndex=joint,
-                lineColorRGB=(1,0,0) if self.last_joint_id-2 != joint else (0,1,1), lineWidth = 2))
-            self.joint_frames.append(p.addUserDebugLine([item for sublist in line_a[:,0].tolist() for item in sublist],
-                [item for sublist in line_a[:,1].tolist() for item in sublist],parentObjectUniqueId=self.robot,parentLinkIndex=joint,
-                lineColorRGB=(0,0,1) if self.last_joint_id-2 != joint else (1,1,0), lineWidth = 2))
+        if not self.links: # if is foreign
+            rot = np.array(p.getMatrixFromQuaternion(
+                    p.getLinkState(self.robot,self.joint_ids[-1],computeForwardKinematics = True)[5])).reshape(3,3)
+            line_n, line_a = self.project_point_to_plane(rot,(0.8,0,0)),self.project_point_to_plane(rot,(0,0,0.8))
+            self.joint_frames.append(p.addUserDebugLine((0,0,0),line_n,parentObjectUniqueId=self.robot,
+                                        parentLinkIndex=self.joint_ids[-1],lineColorRGB=(0,1,1), lineWidth = 2))
+            self.joint_frames.append(p.addUserDebugLine((0,0,0),line_a,parentObjectUniqueId=self.robot,
+                                        parentLinkIndex=self.joint_ids[-1],lineColorRGB=(1,1,0), lineWidth = 2))
+        else:
+            for joint_id in self.joint_ids:
+                self.subs_joints[joint_id//2] = self.subs_joints[joint_id//2][0], p.getJointState(self.robot,joint_id)[0]
+            for joint in range(0,self.last_joint_id,2):
+                transform = self.get_dh_joint_to_joint(joint//2,joint//2+1).subs(self.subs_joints+self.subs_additional).evalf()
+                line_n, _, line_a = frame_lines(transform, 0.8)
+                self.joint_frames.append(p.addUserDebugLine([item for sublist in line_n[:,0].tolist() for item in sublist], 
+                    [item for sublist in line_n[:,1].tolist() for item in sublist],parentObjectUniqueId=self.robot,parentLinkIndex=joint,
+                    lineColorRGB=(1,0,0) if self.last_joint_id-2 != joint else (0,1,1), lineWidth = 2))
+                self.joint_frames.append(p.addUserDebugLine([item for sublist in line_a[:,0].tolist() for item in sublist],
+                    [item for sublist in line_a[:,1].tolist() for item in sublist],parentObjectUniqueId=self.robot,parentLinkIndex=joint,
+                    lineColorRGB=(0,0,1) if self.last_joint_id-2 != joint else (1,1,0), lineWidth = 2))
     
     def add_joint_ids(self):
         add_attachment_joints = False
@@ -107,16 +115,20 @@ class RobotArm:
     def reset_joints(self):
         """ Reset the robotic arm """
         for joint_id in self.joint_ids:
-            p.resetJointState(self.robot,joint_id,
-            self.constraints[joint_id//2][1] if self.links[joint_id//2][0] == p.JOINT_PRISMATIC else 0)
+            joint_info = p.getJointInfo(self.robot,joint_id)
+            p.resetJointState(self.robot,joint_id, joint_info[8] if joint_info[2] == p.JOINT_PRISMATIC else 0)
     
     def load_robot(self):
         if not self.is_imported:
             subs = self.subs_joints + self.subs_additional
             DH_params = sp.Matrix(self.links).subs(subs).evalf()
             dh2urdf = DH2Urdf(DH_params.tolist(),self.constraints,self.attachment)
-            dh2urdf.save_urdf(self.name+'.urdf')
-        self.robot = p.loadURDF(self.name+'.urdf', self.offset, self.orientation, useFixedBase=True)
+            if not os.path.exists(f'{self.file_head}/'):
+                os.mkdir(f'{self.file_head}/')
+            dh2urdf.save_urdf(f'{self.file_head}/{self.name}.urdf')
+
+        self.robot = p.loadURDF(f'{self.file_head}/{self.name}.urdf', self.offset, self.orientation,
+                                    useFixedBase=True, globalScaling = self.scaling)
         self.add_joint_ids()
         self.add_joint_frame_lines()
         self.reset_joints()
@@ -239,34 +251,67 @@ class RobotArm:
             else:
                 if p.readUserDebugParameter(self.record_param) %2 == 0: # start
                     if self.log is None: # once
-                        if not os.path.exists(os.getcwd()+f'\\{self.name}_logs\\'):
-                            os.mkdir(os.getcwd()+f'\\{self.name}_logs\\')
+                        if not os.path.exists(f'{self.file_head}/logs/'):
+                            os.mkdir(f'{self.file_head}/logs/')
                         self.log = p.startStateLogging(p.STATE_LOGGING_GENERIC_ROBOT,
-                            f"{self.name}_logs/{log_name}_{int(p.readUserDebugParameter(self.record_param)//2)}.txt", object_ids)
+                            f"{self.file_head}/logs/{log_name}_{int(p.readUserDebugParameter(self.record_param)//2)}.txt", object_ids)
                 elif self.log is not None:
                     p.stopStateLogging(self.log)
                     self.log = None
         else:
             if start_stop is True: # start
-                if not os.path.exists(os.getcwd()+f'\\{self.name}_logs\\'):
-                    os.mkdir(os.getcwd()+f'\\{self.name}_logs\\')
-                self.log = p.startStateLogging(p.STATE_LOGGING_GENERIC_ROBOT,f"{self.name}_logs/move_{log_name}.txt", object_ids)
+                if not os.path.exists(f'{self.file_head}/logs/'):
+                    os.mkdir(f'{self.file_head}/logs/')
+                self.log = p.startStateLogging(p.STATE_LOGGING_GENERIC_ROBOT,f"{self.file_head}/logs/move_{log_name}.txt", object_ids)
             else:
                 p.stopStateLogging(self.log)
+    
+    def convert_logs_to_prg(self, log_name):
+        log = []
+        for log_name_index in sorted(glob.glob(f'{self.file_head}/logs/'+f"{log_name}*.txt"), key=os.path.getmtime):
+            log += self.readLogFile(log_name_index)
+        if not log:
+            return "No logs with that name"
+        if not p.isConnected():
+            return "Load the robot"
+        recordNum = len(log)
+        objectNum = 1
+        number_steps = int(recordNum / objectNum)
+        step_index = -1
+        pgr_string =  f"1 Servo on  \n2 Wait M_Svo=1 \n3 Base 0 \n4 Ovrd 10 \n5 Dim jStep({number_steps})"
+        pgr_string += f"6 For m1 = 1 To {number_steps} \n7 Mov jStep(m1) \n8 Next m1 \n9 end \n"
+        while (p.isConnected()):
+            p.stepSimulation()
+            step_index+=1
+            for objectId in range(objectNum):
+                record = log[step_index * objectNum + objectId]
+                Id = record[2]
+                numJoints = p.getNumJoints(Id)
+                pgr_string +=  f"jStep({step_index+1})=("
+                for i in range(numJoints):
+                    qIndex = p.getJointInfo(Id, i)[3]
+                    if qIndex > -1:
+                        pgr_string += f"{np.rad2deg(record[qIndex - 7 + 17]):.3f}"
+                        pgr_string +=  ',' if i != numJoints-1 else ')\n'
+            if  step_index == recordNum / objectNum - 1:
+                break  
+        file = open(f"{self.file_head}/{self.name}.prg", "w")
+        file.write(pgr_string)
+        file.close() 
 
     def replay_logs(self, log_name, skim_trough = True, object_ids = None):
         if object_ids is None:
             object_ids = [self.robot]
         log = []
-        for log_name_index in sorted(glob.glob(os.getcwd()+f'\\{self.name}_logs\\'+f"{log_name}*.txt"), key=os.path.getmtime):
+        for log_name_index in sorted(glob.glob(f'{self.file_head}/logs/'+f"{log_name}*.txt"), key=os.path.getmtime):
             log += self.readLogFile(log_name_index)
-        recordNum = len(log)
-        objectNum = len(object_ids)
+        if not log:
+            return "No logs with that name"
+        recordNum, objectNum = len(log), len(object_ids)
         if skim_trough:
             step_index_param = p.addUserDebugParameter("Replay Step", 0, recordNum / objectNum - 1, 0)
         else:
             step_index = -1
-        step = 0
         while (p.isConnected()):
             p.stepSimulation()
             if skim_trough:
@@ -276,20 +321,19 @@ class RobotArm:
             for objectId in range(objectNum):
                 record = log[step_index * objectNum + objectId]
                 Id = record[2]
-                pos = [record[3], record[4], record[5]]
-                orn = [record[6], record[7], record[8], record[9]]
-                p.resetBasePositionAndOrientation(Id, pos, orn)
-                numJoints = p.getNumJoints(Id)
-                for i in range(numJoints):
-                    jointInfo = p.getJointInfo(Id, i)
-                    qIndex = jointInfo[3]
+                p.resetBasePositionAndOrientation(Id, [record[3], record[4], record[5]], 
+                                                [record[6], record[7], record[8], record[9]])
+                for i in range(p.getNumJoints(Id)):
+                    qIndex = p.getJointInfo(Id, i)[3]
                     if qIndex > -1:
                         if self.use_dynamics:
                             p.setJointMotorControl2(Id, i, p.POSITION_CONTROL, record[qIndex - 7 + 17])
                         else:
                             p.resetJointState(Id, i, record[qIndex - 7 + 17])
-            if  step_index == recordNum / objectNum - 1:
-                break   
+            if step_index == recordNum / objectNum - 1 and skim_trough is False:
+                break
+            if self.quit_simulation():
+                break
             time.sleep(self.time_step)
 
     def readLogFile(self, filename, verbose=False):
@@ -321,21 +365,19 @@ class RobotArm:
                 log.append(record)
         return log
 
-    def import_foreign_robot(self,file, scaling=5):
+    def import_foreign_robot(self, file_path, scaling=5):
         self.is_imported = True
-        p.setAdditionalSearchPath(file)
-        self.robot = p.loadURDF(file, self.offset, self.orientation, useFixedBase=True,
-        flags = p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES,globalScaling=scaling )
-        self.add_joint_ids()
-        self.kinematics = 'forward'
-        self.use_orientation_ik = False
-        self.add_joint_sliders()       
-        self.step()
+        self.scaling = scaling
+        file_head, tail = os.path.split(file_path)
+        self.file_head = file_head
+        self.name = tail[:-5]
 
-    def import_robot(self,file_name = 'my_robot'):
-        self.name = file_name
+    def import_robot(self,file_path = 'robot_arms/my_robot/my_robot.urdf'):
         self.is_imported = True
-        file = open(file_name+'.urdf', 'r')
+        file_head, tail = os.path.split(file_path)
+        self.file_head = file_head
+        self.name = tail[:-5]
+        file = open(file_path, 'r')
         lines = file.readlines()
         for i, line in enumerate(lines[2:]):
             if line.strip() == '-->':
@@ -355,7 +397,7 @@ class RobotArm:
             self.write_letter(letter,offset)
             offset[1]-=0.25
 
-    def write_letter(self,letter,pos):
+    def write_letter(self,letter,pos,orn,plane):
         # frame of the letter i 1x1 
         if letter == 'T':
             #(pocx, pocy,po so da odi i koja nasoka, kolku da otide)
@@ -370,9 +412,9 @@ class RobotArm:
         elif letter == 'H':
             comands = [(0,0,'0 1',np.arange(0.0,1.0,0.05)),(1,0,'0 1',np.arange(0.0,1.0,0.05)),(0,0.5,'1 0',np.arange(0.0,1.0,0.05))]
         elif letter == 'F':
-            self.move((pos[0],    pos[1],pos[2], 0,0,0),(2+pos[0],pos[1],pos[2], 0,0,0),'linear',30)
-            self.move((2+pos[0],pos[1],pos[2], 0,0,0),(2+pos[0],-1.5+pos[1],pos[2], 0,0,0),'linear',15)
-            self.move((1+pos[0],pos[1],pos[2], 0,0,0),(1+pos[0],-1.5+pos[1],pos[2], 0,0,0),'linear',15)
+            self.move((pos[0],    pos[1],pos[2], orn[0],orn[1],orn[2]),(2+pos[0],pos[1],pos[2], orn[0],orn[1],orn[2]),plane,'linear',30)
+            self.move((2+pos[0],pos[1],pos[2], orn[0],orn[1],orn[2]),(2+pos[0],-1.5+pos[1],pos[2], orn[0],orn[1],orn[2]),plane,'linear',15)
+            self.move((1+pos[0],pos[1],pos[2], orn[0],orn[1],orn[2]),(1+pos[0],-1.5+pos[1],pos[2], orn[0],orn[1],orn[2]),plane,'linear',15)
             return True
         elif letter == 'N':
             comands = [(0,0,'0 1',np.arange(0.0,1.0,0.05)),(1,0,'0 1',np.arange(0.0,1.0,0.05)),(0,1,'1 -1',np.arange(0.0,1.0,0.05))]
@@ -471,7 +513,6 @@ class RobotArm:
         rotation: tuple()
             Set (R,P,Y) angles.
         """
-      
         steps = 0 # temporary not good with dynamically
         while (p.isConnected()):
             p.stepSimulation() 
@@ -484,8 +525,8 @@ class RobotArm:
                     p.getQuaternionFromEuler(orientation), maxNumIterations=5)[:len(self.joint_ids)]
             
             if self.use_dynamics:
-                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets,
-                targetVelocities = [0]*len(joint_targets),forces=[500]*len(joint_targets))#,positionGains = [1]*len(joint_targets),velocityGains = [0.1]*len(joint_targets))
+                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets)
+                #,targetVelocities = [0]*len(joint_targets),forces=[500]*len(joint_targets))#,positionGains = [1]*len(joint_targets),velocityGains = [0.1]*len(joint_targets))
             else:
                 for i,joint_id in enumerate(self.joint_ids):
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
@@ -498,7 +539,7 @@ class RobotArm:
                 break
             time.sleep(self.time_step)
 
-            if self.use_dynamics and np.allclose([p.getJointState(self.robot,joint_id)[0] for joint_id in self.joint_ids],joint_targets,0.05*(steps/converge)):
+            if self.use_dynamics and np.allclose([p.getJointState(self.robot,joint_id)[0] for joint_id in self.joint_ids],joint_targets,0.1*(steps/converge)):
                 break
             elif not self.use_dynamics and steps > 1:
                 break
