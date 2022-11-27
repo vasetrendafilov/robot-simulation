@@ -14,7 +14,7 @@ class RobotArm:
     A class to easily create and interact with robotic arm.
     """
     def __init__(self, offset = (0,0,0), orientation = (0,0,0,1),use_dynamics = True,
-                    name = 'my_robot', time_step = 1/60, scaling = 1, ik_function = None):
+                    name = 'my_robot', time_step = 1/60, joint_force = 1200, scaling = 1, ik_function = None):
         self.name = name
         self.file_head  = 'robot_arms/' + name
         self.robot = None
@@ -22,6 +22,8 @@ class RobotArm:
         self.orientation = orientation
         self.ik_function = ik_function
         self.use_dynamics = use_dynamics
+        self.ik_null_space = False
+        self.joint_force = joint_force
         #sympy vars
         self.links = []
         self.constraints = []
@@ -33,6 +35,7 @@ class RobotArm:
         self.joint_ids = []
         self.joint_frames = []
         self.is_imported = False
+        self.is_foreign = False
         self.use_orientation_ik = False
         self.pose_param = None
         # attachemt vars
@@ -48,7 +51,7 @@ class RobotArm:
         self.capture_image_button = None
         self.prev_button_state = 2
         self.scaling = scaling
-
+        self.rec_cnt = 1
         if not p.isConnected():
             sim = PybulletSimulation()
             if sim.connect():
@@ -76,10 +79,10 @@ class RobotArm:
                 self.joint_sliders.append((True,p.addUserDebugParameter(f"Theta{i}",np.rad2deg(joint_info[8]),np.rad2deg(joint_info[9]),0)))
     
     def add_joint_frame_lines(self):
-        if not self.links: # if is foreign
+        if self.is_foreign is True: # if is foreign
             rot = np.array(p.getMatrixFromQuaternion(
                     p.getLinkState(self.robot,self.joint_ids[-1],computeForwardKinematics = True)[5])).reshape(3,3)
-            line_n, line_a = self.project_point_to_plane(rot,(0.8,0,0)),self.project_point_to_plane(rot,(0,0,0.8))
+            line_n, line_a = self.rotate_point(rot,(0.8,0,0)),self.rotate_point(rot,(0,0,0.8))
             self.joint_frames.append(p.addUserDebugLine((0,0,0),line_n,parentObjectUniqueId=self.robot,
                                         parentLinkIndex=self.joint_ids[-1],lineColorRGB=(0,1,1), lineWidth = 2))
             self.joint_frames.append(p.addUserDebugLine((0,0,0),line_a,parentObjectUniqueId=self.robot,
@@ -119,7 +122,7 @@ class RobotArm:
             p.resetJointState(self.robot,joint_id, joint_info[8] if joint_info[2] == p.JOINT_PRISMATIC else 0)
     
     def load_robot(self):
-        if not self.is_imported:
+        if self.is_imported is False:
             subs = self.subs_joints + self.subs_additional
             DH_params = sp.Matrix(self.links).subs(subs).evalf()
             dh2urdf = DH2Urdf(DH_params.tolist(),self.constraints,self.attachment)
@@ -164,7 +167,7 @@ class RobotArm:
                         orientation if self.use_orientation_ik else None, maxNumIterations=5)[:len(self.joint_ids)]
 
             if self.use_dynamics:
-                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets)#,forces=[500]*len(joint_targets))
+                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets,forces=[self.joint_force]*len(joint_targets))
             else:
                 for i,joint_id in enumerate(self.joint_ids):
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
@@ -234,14 +237,14 @@ class RobotArm:
                     capture_now = True    
         if capture_now:
             rot = np.array(p.getMatrixFromQuaternion(link_state[5])).reshape(3,3)
-            offset = self.project_point_to_plane(rot, offset_camera)
+            offset = self.rotate_point(rot, offset_camera)
             target = (link_state[4][0]+offset[0],link_state[4][1]+offset[1],link_state[4][2]+offset[2])
             orn = p.getEulerFromQuaternion(link_state[5])
             camera = Camera(target,0.1,(0,np.rad2deg(orn[0])+90,np.rad2deg(orn[2])), near, far, size, fov)
             camera.shot()
             return camera     
 
-    def state_logging(self, log_name, object_ids = None, start_stop = None):
+    def state_logging(self, log_name, start_stop = None, object_ids = None):
         if object_ids is None:
             object_ids = [self.robot]
 
@@ -262,52 +265,46 @@ class RobotArm:
             if start_stop is True: # start
                 if not os.path.exists(f'{self.file_head}/logs/'):
                     os.mkdir(f'{self.file_head}/logs/')
-                self.log = p.startStateLogging(p.STATE_LOGGING_GENERIC_ROBOT,f"{self.file_head}/logs/move_{log_name}.txt", object_ids)
+                self.log = p.startStateLogging(p.STATE_LOGGING_GENERIC_ROBOT,
+                                f"{self.file_head}/logs/move_{log_name}_{self.rec_cnt}.txt", object_ids)
+                self.rec_cnt +=1
             else:
                 p.stopStateLogging(self.log)
     
-    def convert_logs_to_prg(self, log_name):
+    def autocomplete_logs(self,log_names):
+        def sortKeyFunc(s):
+            return int(os.path.basename(s).split('_')[-1][:-4])
         log = []
-        for log_name_index in sorted(glob.glob(f'{self.file_head}/logs/'+f"{log_name}*.txt"), key=os.path.getmtime):
-            log += self.readLogFile(log_name_index)
-        if not log:
-            return "No logs with that name"
-        if not p.isConnected():
-            return "Load the robot"
-        recordNum = len(log)
-        objectNum = 1
-        number_steps = int(recordNum / objectNum)
-        step_index = -1
-        pgr_string =  f"1 Servo on  \n2 Wait M_Svo=1 \n3 Base 0 \n4 Ovrd 10 \n5 Dim jStep({number_steps})"
-        pgr_string += f"6 For m1 = 1 To {number_steps} \n7 Mov jStep(m1) \n8 Next m1 \n9 end \n"
-        while (p.isConnected()):
-            p.stepSimulation()
-            step_index+=1
-            for objectId in range(objectNum):
-                record = log[step_index * objectNum + objectId]
-                Id = record[2]
-                numJoints = p.getNumJoints(Id)
-                pgr_string +=  f"jStep({step_index+1})=("
-                for i in range(numJoints):
-                    qIndex = p.getJointInfo(Id, i)[3]
-                    if qIndex > -1:
-                        pgr_string += f"{np.rad2deg(record[qIndex - 7 + 17]):.3f}"
-                        pgr_string +=  ',' if i != numJoints-1 else ')\n'
-            if  step_index == recordNum / objectNum - 1:
-                break  
+        if type(log_names) != list:
+            log_names = [log_names]
+        for log_name in log_names:
+            for log_name_index in sorted(glob.glob(f'{self.file_head}/logs/'+f"{log_name}*.txt"), key=sortKeyFunc):
+                log += self.readLogFile(log_name_index)
+        return log
+
+    def convert_logs_to_prg(self, log_names):
+        logs = self.autocomplete_logs(log_names)
+        if not logs:
+            return "No logs found"
+        num_steps = len(logs)
+        pgr_string =  f"1 Servo on  \n2 Wait M_Svo=1 \n3 Base 0 \n4 Ovrd 10 \n5 Dim jStep({num_steps})\n"
+        pgr_string += f"6 For m1 = 1 To {num_steps} \n7 Mov jStep(m1) \n8 Next m1 \n9 end \n"
+        for step in range(num_steps):
+            pgr_string +=  f"jStep({step+1})=("
+            for joint in self.joint_ids:
+                pgr_string += f"{np.rad2deg(logs[step][joint + 17]):.3f}"
+                pgr_string +=  ',' if joint != self.joint_ids[-1] else ')\n'
         file = open(f"{self.file_head}/{self.name}.prg", "w")
         file.write(pgr_string)
         file.close() 
 
-    def replay_logs(self, log_name, skim_trough = True, object_ids = None):
+    def replay_logs(self, log_names, skim_trough = True, object_ids = None):
         if object_ids is None:
             object_ids = [self.robot]
-        log = []
-        for log_name_index in sorted(glob.glob(f'{self.file_head}/logs/'+f"{log_name}*.txt"), key=os.path.getmtime):
-            log += self.readLogFile(log_name_index)
-        if not log:
-            return "No logs with that name"
-        recordNum, objectNum = len(log), len(object_ids)
+        logs = self.autocomplete_logs(log_names)
+        if not logs:
+            return "No logs found"
+        recordNum, objectNum = len(logs), len(object_ids)
         if skim_trough:
             step_index_param = p.addUserDebugParameter("Replay Step", 0, recordNum / objectNum - 1, 0)
         else:
@@ -319,7 +316,7 @@ class RobotArm:
             else:
                 step_index+=1
             for objectId in range(objectNum):
-                record = log[step_index * objectNum + objectId]
+                record = logs[step_index * objectNum + objectId]
                 Id = record[2]
                 p.resetBasePositionAndOrientation(Id, [record[3], record[4], record[5]], 
                                                 [record[6], record[7], record[8], record[9]])
@@ -327,7 +324,7 @@ class RobotArm:
                     qIndex = p.getJointInfo(Id, i)[3]
                     if qIndex > -1:
                         if self.use_dynamics:
-                            p.setJointMotorControl2(Id, i, p.POSITION_CONTROL, record[qIndex - 7 + 17])
+                            p.setJointMotorControl2(Id, i, p.POSITION_CONTROL, record[qIndex - 7 + 17],force=self.joint_force)
                         else:
                             p.resetJointState(Id, i, record[qIndex - 7 + 17])
             if step_index == recordNum / objectNum - 1 and skim_trough is False:
@@ -366,7 +363,7 @@ class RobotArm:
         return log
 
     def import_foreign_robot(self, file_path, scaling=5):
-        self.is_imported = True
+        self.is_imported = self.is_foreign = True
         self.scaling = scaling
         file_head, tail = os.path.split(file_path)
         self.file_head = file_head
@@ -392,48 +389,53 @@ class RobotArm:
             else:
                 self.add_fixed_joint(float(dh_list[1]),float(dh_list[2]),float(dh_list[3]),float(dh_list[4]),int(dh_list[9]))
     
-    def write_text(self,text,offset):
+    def write_text(self,text,position,orientation,offset=1,plane=(0,0,0),scale = 0.5):
         for letter in text:
-            self.write_letter(letter,offset)
-            offset[1]-=0.25
+            self.write_letter(letter,position,orientation,plane,scale)
+            position[1] += offset
 
-    def write_letter(self,letter,pos,orn,plane):
-        # frame of the letter i 1x1 
+    def write_letter(self,letter,position,orientation,plane=(0,0,0),s=0.5):
+        x,y,z = position
+        R,P,Y = orientation
+        # frame of the letter 2x1.5
         if letter == 'T':
-            #(pocx, pocy,po so da odi i koja nasoka, kolku da otide)
-            comands = [(0,1,'1 0',np.arange(0.0,1.0,0.05)),(0.5,0,'0 1',np.arange(0.0,1.0,0.05))]
+            self.move((x,y,z,R,P,Y),(x,y+1.5*s,z, R,P,Y),plane,'linear',30)
+            self.move((x,y+0.75*s,z, R,P,Y),(x+2*s,y+0.75*s,z, R,P,Y),plane,'linear',30)
         elif letter == 'E':
-            comands = [(0,1,'1 0',np.arange(0.0,1.0,0.05)),(0,0.5,'1 0',np.arange(0.0,1.0,0.05)),
-            (0,0,'1 0',np.arange(0.0,1.0,0.05)),(0,0,'0 1',np.arange(0.0,1.0,0.05))]
+            self.move((x+2*s,y,z,R,P,Y),(x,y,z, R,P,Y),plane,'linear',30)
+            self.move((x,y,z, R,P,Y),(x,y+1.5*s,z, R,P,Y),plane,'linear',15)
+            self.move((x+1*s,y,z, R,P,Y),(x+1*s,y+1.5*s,z, R,P,Y),plane,'linear',15)
+            self.move((x+2*s,y,z, R,P,Y),(x+2*s,y+1.5*s,z, R,P,Y),plane,'linear',15)
         elif letter == 'I':
-            comands = [(0.5,0,'0 1',np.arange(0.0,1.0,0.05)),(0.2,0,'1 0',np.arange(0.0,0.6,0.05)),(0.2,1,'1 0',np.arange(0.0,0.6,0.05))]
+            self.move((x,y+0.4*s,z,R,P,Y),(x,y+1.1*s,z, R,P,Y),plane,'linear',15)
+            self.move((x,y+0.75*s,z, R,P,Y),(x+2*s,y+0.75*s,z, R,P,Y),plane,'linear',30)
+            self.move((x+2*s,y+0.4*s,z, R,P,Y),(x+2*s,y+1.1*s,z, R,P,Y),plane,'linear',15)
         elif letter == 'L':
-            comands = [(0,0,'0 1',np.arange(0.0,1.0,0.05)),(0,0,'1 0',np.arange(0.0,1.0,0.05))]
+            self.move((x,y,z,R,P,Y),(x+2*s,y,z, R,P,Y),plane,'linear',30)
+            self.move((x+2*s,y,z, R,P,Y),(x+2*s,y+1.5*s,z, R,P,Y),plane,'linear',15)
         elif letter == 'H':
-            comands = [(0,0,'0 1',np.arange(0.0,1.0,0.05)),(1,0,'0 1',np.arange(0.0,1.0,0.05)),(0,0.5,'1 0',np.arange(0.0,1.0,0.05))]
+            self.move((x+2*s,y,z,R,P,Y),(x,y,z, R,P,Y),plane,'linear',30)
+            self.move((x+1*s,y,z, R,P,Y),(x+1*s,y+1.5*s,z, R,P,Y),plane,'linear',15)
+            self.move((x+2*s,y+1.5*s,z, R,P,Y),(x,y+1.5*s,z, R,P,Y),plane,'linear',30)
         elif letter == 'F':
-            self.move((pos[0],    pos[1],pos[2], orn[0],orn[1],orn[2]),(2+pos[0],pos[1],pos[2], orn[0],orn[1],orn[2]),plane,'linear',30)
-            self.move((2+pos[0],pos[1],pos[2], orn[0],orn[1],orn[2]),(2+pos[0],-1.5+pos[1],pos[2], orn[0],orn[1],orn[2]),plane,'linear',15)
-            self.move((1+pos[0],pos[1],pos[2], orn[0],orn[1],orn[2]),(1+pos[0],-1.5+pos[1],pos[2], orn[0],orn[1],orn[2]),plane,'linear',15)
-            return True
+            self.move((x+2*s,y,z,R,P,Y),(x,y,z, R,P,Y),plane,'linear',30)
+            self.move((x,y,z, R,P,Y),(x,y+1.5*s,z, R,P,Y),plane,'linear',15)
+            self.move((x+1*s,y,z, R,P,Y),(x+1*s,y+1.5*s,z, R,P,Y),plane,'linear',15)
         elif letter == 'N':
-            comands = [(0,0,'0 1',np.arange(0.0,1.0,0.05)),(1,0,'0 1',np.arange(0.0,1.0,0.05)),(0,1,'1 -1',np.arange(0.0,1.0,0.05))]
-        elif letter == 'M':
-            comands = [(0,0,'0 1',np.arange(0.0,1.0,0.05)),(1,0,'0 1',np.arange(0.0,1.0,0.05)),
-            (0,1,'1 -1',np.arange(0.0,0.5,0.05)),(0.5,0.5,'1 1',np.arange(0.0,0.5,0.05))]
-        elif letter == 'X':
-            comands = [(0,1,'1 -1',np.arange(0.0,1.0,0.05)),(0,0,'1 1',np.arange(0.0,1.0,0.05))]
+            self.move((x+2*s,y,z,R,P,Y),(x,y,z, R,P,Y),plane,'linear',30)
+            self.move((x,y,z, R,P,Y),(x+2*s,y+1.5*s,z, R,P,Y),plane,'linear',30)
+            self.move((x+2*s,y+1.5*s,z, R,P,Y),(x,y+1.5*s,z, R,P,Y),plane,'linear',30)
         elif letter == 'V':
-            comands = [(0,1,'0.5 -1',np.arange(0.0,1,0.05)),(0.5,0,'0.5 1',np.arange(0.0,1,0.05))]
+            self.move((x,y,z, R,P,Y),(x+2*s,y+0.75*s,z, R,P,Y),plane,'linear',30)
+            self.move((x+2*s,y+0.75*s,z, R,P,Y),(x,y+1.5*s,z, R,P,Y),plane,'linear',30)
         elif letter == 'A':
-            comands = [(0,0,'0.5 1',np.arange(0.0,1,0.05)),(0.5,1,'0.5 -1',np.arange(0.0,1,0.05)),(0.3,0.5,'1 0',np.arange(0.0,0.5,0.05))]
+            self.move((x+2*s,y,z, R,P,Y),(x,y+0.75*s,z, R,P,Y),plane,'linear',30)
+            self.move((x,y+0.75*s,z, R,P,Y),(x+2*s,y+1.5*s,z, R,P,Y),plane,'linear',30)
+            self.move((x+0.75*s,y+0.45*s,z, R,P,Y),(x+0.75*s,y+1.05*s,z, R,P,Y),plane,'linear',30)
         elif letter == 'D':
-            self.move((pos[0],pos[1],pos[2], 0,0,180),(0.2+pos[0],pos[1],pos[2], 0,0,180),'linear',20,(0.2,0.15,1,1))
-            self.move((0.2+pos[0],pos[1],pos[2], 0,0,180),(0.2+pos[0],-0.03+pos[1],pos[2], 0,0,180),'linear',5,(0.2,0.15,1,1))
-            self.move((0.2+pos[0],-0.03+pos[1],pos[2], 0,0,180),(pos[0],-0.03+pos[1],pos[2], 0,0,180),'circular',40,(0.1,0.1,0,1))
-            self.move((pos[0],-0.03+pos[1],pos[2], 0,0,180),(pos[0],pos[1],pos[2], 0,0,180),'linear',5,(0.2,0.15,1,1))
-            return True
-        
+            self.move((x,y,z,R,P,Y),(x+2*s,y,z,R,P,Y),plane,'linear',30)
+            self.move((x+2*s,y,z, R,P,Y),(x,y,z, R,P,Y),plane,'circular',30,(0.5,0.5,0,0))
+
     def move(self, start, end, plane = (0,0,0), interpolation='linear',steps=30,param=None,closed=False,log_move = False):
         """
         Move to a desired position and rotation of robot. 
@@ -455,11 +457,11 @@ class RobotArm:
         closed: bool
             To draw the whole elipse
         """
-        if log_move:    self.state_logging(f"{interpolation}_{start}_{end}",start_stop=True)
-        # self.hasPrevPose = False treba da se nagradi
+        if log_move:    self.state_logging(f"{interpolation}_{start}_{end}",True)
+        self.hasPrevPose = [False]*5 # restart drawing
         x1,y1,z1,R1,P1,Y1 = start
         x2,y2,z2,R2,P2,Y2 = end
-        rot_mat = rotation_matrix_from_euler_angles(plane,'xyz')
+        rot_mat = rotation_matrix_from_euler_angles(np.deg2rad(plane),'xyz')
         if interpolation == 'linear':
             for x,y,z,R,P,Y in zip(np.linspace(x1,x2,steps),np.linspace(y1,y2,steps),np.linspace(z1,z2,steps),
                                    np.linspace(R1,R2,steps),np.linspace(P1,P2,steps),np.linspace(Y1,Y2,steps)):
@@ -499,11 +501,11 @@ class RobotArm:
 
             for x,y,z,R,P,Y in zip(x_center + a*np.cos(t),y_center + b*np.sin(t),np.linspace(z1, z2, steps),
                                 np.linspace(R1,R2,steps),np.linspace(P1,P2,steps),np.linspace(Y1,Y2,steps)):
-                if not self.move2point(self.project_point_to_plane(rot_mat,(x,y,z)),(R,P,Y)):
+                if not self.move2point(self.rotate_point(rot_mat,(x,y,z)),(R,P,Y)):
                     return False
-        if log_move:   self.state_logging("",start_stop=False) 
+        if log_move:   self.state_logging("",False) 
 
-    def move2point(self,position,orientation=None, converge = 10):
+    def move2point(self,position,orientation=None, converge = 5):
         """
         Move to a desired position and rotation of robot. 
         Parameters
@@ -517,23 +519,32 @@ class RobotArm:
         while (p.isConnected()):
             p.stepSimulation() 
             steps+=1
-        
+
             if self.ik_function:
                 joint_targets = self.ik_function(position, orientation)
-            else:  
-                joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, position, 
-                    p.getQuaternionFromEuler(orientation), maxNumIterations=5)[:len(self.joint_ids)]
-            
+            else:
+                if self.ik_null_space is True:
+                    ll,ul,jr = [],[],[]
+                    rp = [0, 0, 1, 0, 0, 0]
+                    for joint in self.joint_ids:
+                        ll.append(p.getJointInfo(self.robot,joint)[8])
+                        ul.append(p.getJointInfo(self.robot,joint)[9])
+                        jr.append(2*np.pi)
+                    joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, position, 
+                        p.getQuaternionFromEuler(np.deg2rad(orientation)),ll,ul,jr,rp, maxNumIterations=5)[:len(self.joint_ids)]
+                else:
+                    joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, position, 
+                        p.getQuaternionFromEuler(np.deg2rad(orientation)), maxNumIterations=5)[:len(self.joint_ids)]
+
             if self.use_dynamics:
-                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets)
-                #,targetVelocities = [0]*len(joint_targets),forces=[500]*len(joint_targets))#,positionGains = [1]*len(joint_targets),velocityGains = [0.1]*len(joint_targets))
+                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets,forces=[self.joint_force]*len(joint_targets))
             else:
                 for i,joint_id in enumerate(self.joint_ids):
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
             
             link_state = p.getLinkState(self.robot,self.last_joint_id,computeForwardKinematics = True)
             self.display_pos_and_orn(link_state[4],link_state[5],self.last_joint_id)
-            self.draw_trajectory(position,link_state[4])
+            self.draw_trajectory(position,link_state[4],30)
             
             if self.quit_simulation():
                 break
@@ -545,7 +556,7 @@ class RobotArm:
                 break
         return True
     
-    def project_point_to_plane(self, rot_mat, point):
+    def rotate_point(self, rot_mat, point):
         return point[0] * rot_mat[:3, 0] + point[1] * rot_mat[:3, 1] + point[2] * rot_mat[:3, 2]
 
     def add_attachment(self, name = 'gripper', orientation = (-np.pi/2,0,0), position = (0,0,0.3)):
