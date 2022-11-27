@@ -5,28 +5,31 @@ import os
 
 class PybulletSimulation:
 
-    def __init__(self, connection_mode = p.GUI, fps = 60, gravity = (0, 0, -9.8)):
+    def __init__(self, connection_mode = p.GUI, fps = 60, gravity = (0, 0, -9.8), cam_param = (9,15,-20), cam_target = (0,0,0)):
         self.connection_mode = connection_mode
         self.time_step= 1/fps
         self.gravity = gravity
+        self.cam_param = cam_param
+        self.cam_target = cam_target
 
     def configure(self):
         p.setTimeStep(self.time_step)
         p.setGravity(self.gravity[0],self.gravity[1],self.gravity[2])
         p.setAdditionalSearchPath(os.getcwd())
         p.setAdditionalSearchPath(pd.getDataPath())
-        
         p.configureDebugVisualizer(lightPosition= (0,0,5))
-        p.resetDebugVisualizerCamera( cameraDistance=10, cameraYaw=15, cameraPitch=-20, cameraTargetPosition=[0,0,0])
-        #p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS,0)
+        p.resetDebugVisualizerCamera(self.cam_param[0], self.cam_param[1], self.cam_param[2], self.cam_target)
     
+    def load_table(self, position = (0,0,-2.9), orientation=(0,0,0,1), scaling = 5):
+        p.loadURDF("table/table.urdf", position, orientation, flags=p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES,globalScaling=scaling )
+
     def load_playground1(self):
         legos=[]
         flags = p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
         p.loadURDF("tray/traybox.urdf", [0, 0, 0], [0,0,0,1], flags=flags,globalScaling=7 )
-        legos.append(p.loadURDF("lego/lego.urdf",np.array([0.1, 0.3, 0.5]), flags=flags,globalScaling=10 ))
-        legos.append(p.loadURDF("lego/lego.urdf",np.array([-0.1, 0.3, 0.5]), flags=flags,globalScaling=10 ))
-        legos.append(p.loadURDF("lego/lego.urdf",np.array([0.1, 0.3, 0.7]), flags=flags,globalScaling=10 ))
+        legos.append(p.loadURDF("lego/lego.urdf",np.array([0.1, 0.3, 0.5]), flags=flags,globalScaling=7 ))
+        legos.append(p.loadURDF("lego/lego.urdf",np.array([-0.1, 0.3, 0.5]), flags=flags,globalScaling=7 ))
+        legos.append(p.loadURDF("lego/lego.urdf",np.array([0.1, 0.3, 0.7]), flags=flags,globalScaling=7 ))
         p.loadURDF("sphere_small.urdf",np.array( [0, 0.3, 0.6]), flags=flags,globalScaling=7 )
         p.loadURDF("sphere_small.urdf",np.array( [0, 0.3, 0.5]), flags=flags,globalScaling=7 )
         p.loadURDF("sphere_small.urdf",np.array( [0, 0.3, 0.7]), flags=flags,globalScaling=7 )

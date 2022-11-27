@@ -1,57 +1,55 @@
 from packages.utils import *
-from packages.dh2urdf import *
-from packages.pybullet_sim import *
+from packages.dh2urdf import DH2Urdf
+from packages.pybullet_sim import PybulletSimulation, Camera
+import pybullet as p
 import sympy as sp
 import numpy as np
 import struct
+import time 
 import glob
 import os
-import pybullet as p
-import time 
 
 class RobotArm:
     """
     A class to easily create and interact with robotic arm.
     """
-    def __init__(self, offset = (0,0,0), orientation = (0,0,0,1),use_dynamics = True,
-                    name = 'my_robot', time_step = 1/60, joint_force = 1200, scaling = 1, ik_function = None):
-        self.name = name
-        self.file_head  = 'robot_arms/' + name
+    def __init__(self, offset = (0,0,0), orientation = (0,0,0,1), use_dynamics = True, name = 'my_robot',
+                    time_step = 1/60, joint_force = 1200, scaling = 1, ik_function = None):
+        # sympy vars
+        self.links, self.joint_variables, self.constraints= [],[],[]
+        self.subs_joints, self.subs_additional = [],[]
+        # load robot vars
         self.robot = None
-        self.offset = offset
-        self.orientation = orientation
-        self.ik_function = ik_function
+        self.file_head, self.name =  'robot_arms/' + name, name
+        self.is_imported, self.is_foreign = False, False
+        self.offset, self.orientation = offset, orientation
+        self.scaling = scaling
+        # joint motor control vars
         self.use_dynamics = use_dynamics
-        self.ik_null_space = False
+        self.frames_to_complete = 20
         self.joint_force = joint_force
-        #sympy vars
-        self.links = []
-        self.constraints = []
-        self.joint_variables = []
-        self.subs_joints = []
-        self.subs_additional = []
-        #pybullet vars
-        self.log, self.record_param = None,None
-        self.joint_ids = []
-        self.joint_frames = []
-        self.is_imported = False
-        self.is_foreign = False
-        self.use_orientation_ik = False
-        self.pose_param = None
-        # attachemt vars
-        self.attachment = None
-        self.attachment_button = None
+        # ik vars
+        self.ik_joint_error = 0.02
+        self.use_orientation_ik = True
+        self.ik_function = ik_function
+        # attachment vars
         self.attachment_joint_ids = []
-        # drawing trajectory
+        self.attachment, self.attachment_button = None, None
+        self.attachment_open_targets, self.attachment_close_targets = (0,0), (0.3,-0.3)
+        # draw trajectory vars
+        self.trajectory_lifetime = 5
         self.hasPrevPose = [False]*5
-        self.prevPose1 = [[0,0,0]]*5
-        self.prevPose2 = [[0,0,0]]*5
-        # buttons
-        self.quit_button = None
+        self.prevPose1, self.prevPose2 = [[0,0,0]]*5, [[0,0,0]]*5
+        # capture image vars
         self.capture_image_button = None
         self.prev_button_state = 2
-        self.scaling = scaling
+        # buttons
+        self.quit_button = None
+        self.pose_text = None
+        # state logging
+        self.log, self.record_button = None,None
         self.rec_cnt = 1
+        # connect to simulation
         if not p.isConnected():
             sim = PybulletSimulation()
             if sim.connect():
@@ -79,6 +77,7 @@ class RobotArm:
                 self.joint_sliders.append((True,p.addUserDebugParameter(f"Theta{i}",np.rad2deg(joint_info[8]),np.rad2deg(joint_info[9]),0)))
     
     def add_joint_frame_lines(self):
+        self.joint_frames = []
         if self.is_foreign is True: # if is foreign
             rot = np.array(p.getMatrixFromQuaternion(
                     p.getLinkState(self.robot,self.joint_ids[-1],computeForwardKinematics = True)[5])).reshape(3,3)
@@ -101,25 +100,38 @@ class RobotArm:
                     lineColorRGB=(0,0,1) if self.last_joint_id-2 != joint else (1,1,0), lineWidth = 2))
     
     def add_joint_ids(self):
+        self.joint_ids = []
         add_attachment_joints = False
         for i in range(p.getNumJoints(self.robot)): 
-            if p.getJointInfo(self.robot,i)[1] == b'attachment_joint' or add_attachment_joints:
+            joint_info = p.getJointInfo(self.robot,i)
+            if joint_info[1] == b'attachment_joint' or add_attachment_joints:
                 if add_attachment_joints == False:
                     self.last_joint_id = i-1
                 add_attachment_joints = True
-                if (p.getJointInfo(self.robot,i)[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE]):
+                if (joint_info[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE]):
                     self.attachment_joint_ids.append(i)   
             else:
-                if (p.getJointInfo(self.robot,i)[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE]):
-                    self.joint_ids.append(i)   
+                if (joint_info[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE]):
+                    self.joint_ids.append(i)
+                    if self.is_foreign:
+                        self.constraints.append([joint_info[10], joint_info[8], joint_info[9], joint_info[11], True])   
         if add_attachment_joints is False:
             self.last_joint_id = i
 
-    def reset_joints(self):
-        """ Reset the robotic arm """
+    def get_joint_states(self):
+        joint_states = []
         for joint_id in self.joint_ids:
+            joint_states.append(p.getJointState(self.robot,joint_id)[0])
+        return joint_states
+
+    def reset_joints(self,joint_targets = None):
+        """ Reset the robotic arm """
+        for i,joint_id in enumerate(self.joint_ids):
             joint_info = p.getJointInfo(self.robot,joint_id)
-            p.resetJointState(self.robot,joint_id, joint_info[8] if joint_info[2] == p.JOINT_PRISMATIC else 0)
+            if joint_targets:
+                p.resetJointState(self.robot,joint_id, joint_targets[i])
+            else:
+                p.resetJointState(self.robot,joint_id, joint_info[8] if joint_info[2] == p.JOINT_PRISMATIC else 0)
     
     def load_robot(self):
         if self.is_imported is False:
@@ -136,7 +148,8 @@ class RobotArm:
         self.add_joint_frame_lines()
         self.reset_joints()
     
-    def interact(self, kinematics = 'forward', use_orientation_ik = False, x_range = (-5,5,1), y_range = (-5,5,1), z_range = (-5,5,1)):
+    def interact(self, kinematics = 'forward', use_orientation_ik = True, use_draw_trajectory = True, use_display_pos_and_orn = False,
+                    x_range = (-5,5,1), y_range = (-5,5,1), z_range = (-5,5,1)):
         self.kinematics = kinematics
         self.use_orientation_ik = use_orientation_ik
         self.load_robot()
@@ -144,9 +157,9 @@ class RobotArm:
             self.add_joint_sliders()
         else:
             self.add_pose_sliders(x_range, y_range, z_range)           
-        self.step()
+        self.step(use_draw_trajectory, use_display_pos_and_orn)
 
-    def step(self):
+    def step(self, use_draw_trajectory = True, use_display_pos_and_orn = False):
         while (p.isConnected()):
             p.stepSimulation()
             if self.kinematics == 'forward':
@@ -165,21 +178,23 @@ class RobotArm:
                 else:
                     joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, position, 
                         orientation if self.use_orientation_ik else None, maxNumIterations=5)[:len(self.joint_ids)]
+                    joint_targets = self.limit_joint_targets(joint_targets)        
 
             if self.use_dynamics:
                 p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets,forces=[self.joint_force]*len(joint_targets))
             else:
                 for i,joint_id in enumerate(self.joint_ids):
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
-            
+          
             if self.attachment_joint_ids:
-                self.actuate_attachment(self.attachment_joint_ids)
+                self.actuate_attachment()
 
-            link_state = p.getLinkState(self.robot,self.last_joint_id,computeForwardKinematics = True)
-            
+            link_state = p.getLinkState(self.robot,self.last_joint_id,computeForwardKinematics = True)  
             self.capture_image(capture_now=False)
-            #self.display_pos_and_orn(link_state[4],link_state[5],self.last_joint_id)
-            self.draw_trajectory(position,link_state[4],5)
+            if use_draw_trajectory:
+                self.draw_trajectory(link_state[4],position,self.trajectory_lifetime)
+            if use_display_pos_and_orn:
+                self.display_pos_and_orn(link_state[4],link_state[5],self.last_joint_id)
             self.state_logging(self.kinematics)
             if self.quit_simulation():
                 break
@@ -188,13 +203,13 @@ class RobotArm:
     def display_pos_and_orn(self, position, orientation, link_id):
         x,y,z = position
         R,P,Y = np.rad2deg(p.getEulerFromQuaternion(orientation))
-        if not self.pose_param:
-            self.pose_param =  p.addUserDebugText(f"(x:{x:.2f} y:{y:.2f} z:{z:.2f}) (R:{R:.1f} P:{P:.1f} Y:{Y:.1f})", [0.5, 0, 0.5],textColorRGB=[0, 0, 0],
+        if self.pose_text is None:
+            self.pose_text =  p.addUserDebugText(f"(x:{x:.2f} y:{y:.2f} z:{z:.2f}) (R:{R:.1f} P:{P:.1f} Y:{Y:.1f})", [0.5, 0, 0.5],textColorRGB=[0, 0, 0],
                 textSize= 1,parentObjectUniqueId=self.robot,parentLinkIndex=link_id)       
         p.addUserDebugText(f"(x:{x:.2f} y:{y:.2f} z:{z:.2f}) (R:{R:.1f} P:{P:.1f} Y:{Y:.1f})", [0.5, 0, 0.5],textColorRGB=[0, 0, 0],textSize= 1,
-            parentObjectUniqueId=self.robot,parentLinkIndex=link_id, replaceItemUniqueId = self.pose_param)
+            parentObjectUniqueId=self.robot,parentLinkIndex=link_id, replaceItemUniqueId = self.pose_text)
      
-    def draw_trajectory(self, target, current, lifeTime = 15, line_index = 0):
+    def draw_trajectory(self, current, target = None, lifeTime = 15, line_index = 0):
         if (self.hasPrevPose[line_index] is True):
             if target:
                 p.addUserDebugLine(self.prevPose1[line_index], target, [0, 0, 0.3], 1, lifeTime)
@@ -213,16 +228,18 @@ class RobotArm:
             else:
                 return False
     
-    def actuate_attachment(self, joint_ids, joint_targets = None):
+    def actuate_attachment(self, joint_ids = None, joint_targets = None):
+        if joint_ids is None:
+            joint_ids = self.attachment_joint_ids
         if joint_targets is None:
-            joint_targets = [0,0]
+            joint_targets = self.attachment_open_targets
             if self.attachment_button is None:
-                self.attachment_button = p.addUserDebugParameter("Open/Close Gripper",1,0,1)
+                self.attachment_button = p.addUserDebugParameter("Close/Open Gripper",1,0,1)
             else:
-                if p.readUserDebugParameter(self.attachment_button) %2 == 0: # close 
-                    joint_targets = [0.3,-0.3]
+                if p.readUserDebugParameter(self.attachment_button) %2 == 0: # close the gripper
+                    joint_targets = self.attachment_close_targets
                 else:
-                    joint_targets = [0,0]
+                    joint_targets = self.attachment_open_targets
         p.setJointMotorControlArray(self.robot,joint_ids,p.POSITION_CONTROL,joint_targets, forces=[20]*len(joint_ids))
     
     def capture_image(self, link_state = None, offset_camera = (0,0,0.5), near = 0.1, far = 5, size = (320,320), fov = 40, capture_now = False):
@@ -244,20 +261,20 @@ class RobotArm:
             camera.shot()
             return camera     
 
-    def state_logging(self, log_name, start_stop = None, object_ids = None):
+    def state_logging(self, log_name='', start_stop = None, object_ids = None):
         if object_ids is None:
             object_ids = [self.robot]
 
         if start_stop is None:
-            if self.record_param is None:
-                self.record_param = p.addUserDebugParameter("Start/Stop Logging",1,0,1)
+            if self.record_button is None:
+                self.record_button = p.addUserDebugParameter("Start/Stop Logging",1,0,1)
             else:
-                if p.readUserDebugParameter(self.record_param) %2 == 0: # start
+                if p.readUserDebugParameter(self.record_button) %2 == 0: # start
                     if self.log is None: # once
                         if not os.path.exists(f'{self.file_head}/logs/'):
                             os.mkdir(f'{self.file_head}/logs/')
                         self.log = p.startStateLogging(p.STATE_LOGGING_GENERIC_ROBOT,
-                            f"{self.file_head}/logs/{log_name}_{int(p.readUserDebugParameter(self.record_param)//2)}.txt", object_ids)
+                            f"{self.file_head}/logs/{log_name}_{int(p.readUserDebugParameter(self.record_button)//2)}.txt", object_ids)
                 elif self.log is not None:
                     p.stopStateLogging(self.log)
                     self.log = None
@@ -327,6 +344,9 @@ class RobotArm:
                             p.setJointMotorControl2(Id, i, p.POSITION_CONTROL, record[qIndex - 7 + 17],force=self.joint_force)
                         else:
                             p.resetJointState(Id, i, record[qIndex - 7 + 17])
+    
+            self.draw_trajectory(p.getLinkState(self.robot,self.last_joint_id,computeForwardKinematics = True)[4],
+                                    lifeTime= self.trajectory_lifetime)
             if step_index == recordNum / objectNum - 1 and skim_trough is False:
                 break
             if self.quit_simulation():
@@ -457,7 +477,8 @@ class RobotArm:
         closed: bool
             To draw the whole elipse
         """
-        if log_move:    self.state_logging(f"{interpolation}_{start}_{end}",True)
+        if log_move:    
+            self.state_logging(f"{interpolation}_{start}_{end}"+ '' if param is None else str(param),True)
         self.hasPrevPose = [False]*5 # restart drawing
         x1,y1,z1,R1,P1,Y1 = start
         x2,y2,z2,R2,P2,Y2 = end
@@ -503,9 +524,10 @@ class RobotArm:
                                 np.linspace(R1,R2,steps),np.linspace(P1,P2,steps),np.linspace(Y1,Y2,steps)):
                 if not self.move2point(self.rotate_point(rot_mat,(x,y,z)),(R,P,Y)):
                     return False
-        if log_move:   self.state_logging("",False) 
+        if log_move:   
+            self.state_logging(start_stop=False) 
 
-    def move2point(self,position,orientation=None, converge = 5):
+    def move2point(self,position,orientation=None):
         """
         Move to a desired position and rotation of robot. 
         Parameters
@@ -515,26 +537,16 @@ class RobotArm:
         rotation: tuple()
             Set (R,P,Y) angles.
         """
-        steps = 0 # temporary not good with dynamically
+        steps = 0 
         while (p.isConnected()):
-            p.stepSimulation() 
             steps+=1
-
+            p.stepSimulation() 
             if self.ik_function:
                 joint_targets = self.ik_function(position, orientation)
             else:
-                if self.ik_null_space is True:
-                    ll,ul,jr = [],[],[]
-                    rp = [0, 0, 1, 0, 0, 0]
-                    for joint in self.joint_ids:
-                        ll.append(p.getJointInfo(self.robot,joint)[8])
-                        ul.append(p.getJointInfo(self.robot,joint)[9])
-                        jr.append(2*np.pi)
-                    joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, position, 
-                        p.getQuaternionFromEuler(np.deg2rad(orientation)),ll,ul,jr,rp, maxNumIterations=5)[:len(self.joint_ids)]
-                else:
-                    joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, position, 
-                        p.getQuaternionFromEuler(np.deg2rad(orientation)), maxNumIterations=5)[:len(self.joint_ids)]
+                joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, position, 
+                    p.getQuaternionFromEuler(np.deg2rad(orientation)), maxNumIterations=5)[:len(self.joint_ids)]
+                joint_targets = self.limit_joint_targets(joint_targets)
 
             if self.use_dynamics:
                 p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets,forces=[self.joint_force]*len(joint_targets))
@@ -543,19 +555,25 @@ class RobotArm:
                     p.resetJointState(self.robot,joint_id,joint_targets[i])
             
             link_state = p.getLinkState(self.robot,self.last_joint_id,computeForwardKinematics = True)
-            self.display_pos_and_orn(link_state[4],link_state[5],self.last_joint_id)
-            self.draw_trajectory(position,link_state[4],30)
+            #self.display_pos_and_orn(link_state[4],link_state[5],self.last_joint_id)
+            self.draw_trajectory(link_state[4],position,self.trajectory_lifetime)
             
             if self.quit_simulation():
-                break
-            time.sleep(self.time_step)
-
-            if self.use_dynamics and np.allclose([p.getJointState(self.robot,joint_id)[0] for joint_id in self.joint_ids],joint_targets,0.1*(steps/converge)):
+                return False
+            if self.use_dynamics and (np.allclose([p.getJointState(self.robot,joint_id)[0] for joint_id in self.joint_ids],
+                                        joint_targets,self.ik_joint_error) or steps > self.frames_to_complete):
                 break
             elif not self.use_dynamics and steps > 1:
                 break
+            time.sleep(self.time_step)
         return True
-    
+
+    def limit_joint_targets(self, joint_targets):
+        new_joint_targets = []
+        for i,joint in enumerate(joint_targets):
+            new_joint_targets.append(np.clip(joint, self.constraints[i][1], self.constraints[i][2]))
+        return new_joint_targets
+
     def rotate_point(self, rot_mat, point):
         return point[0] * rot_mat[:3, 0] + point[1] * rot_mat[:3, 1] + point[2] * rot_mat[:3, 2]
 
