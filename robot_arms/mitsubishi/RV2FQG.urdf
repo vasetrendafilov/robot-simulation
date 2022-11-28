@@ -45,7 +45,7 @@
       <child link="link2"/>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <axis xyz="0 1 0"/>
-      <limit upper="1.221" lower="-1.7453" effort="10" velocity="5.599666666666667" />
+      <limit upper="1.7453" lower="-1.7453" effort="10" velocity="5.599666666666667" />
     </joint>
 
     <link name="link2">
@@ -69,7 +69,7 @@
       <child link="link3"/>
       <origin xyz="0 0 0.230" rpy="0 0 0"/>
       <axis xyz="0 1 0"/>
-      <limit upper="2.268" lower="0.00" effort="10" velocity="6.28" />
+      <limit upper="2.443" lower="0.00" effort="10" velocity="6.28" />
     </joint>
 
     <link name="link3">

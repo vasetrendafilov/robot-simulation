@@ -1,0 +1,144 @@
+<robot name="revolute_gripper">
+  <link name="base">
+  <inertial>
+    <mass value="1"/>
+    <inertia ixx="100" ixy="0" ixz="0" iyy="100" iyz="0" izz="100" />
+    <origin/>
+  </inertial>
+    <visual>
+      <geometry>
+        <cylinder length='0.15' radius='0.43'/>
+      </geometry>
+      <origin rpy="0 -1.57 0" xyz="0.125 0 0"/>
+      <material name="white">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+  <collision>
+      <origin rpy="0 -1.57 0" xyz="0.125 0 0"/>
+    <geometry>
+         <cylinder length='0.15' radius='0.43'/>
+    </geometry>
+    <contact_coefficients mu="0" kp="1000.0" kd="1.0"/>
+  </collision>
+  </link>
+  
+  <joint name="left_gripper_joint" type="revolute">
+    <axis xyz="0 0 1"/>
+    <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
+    <origin rpy="0 0 0" xyz="0.22 0.1 0"/>
+    <parent link="base"/>
+    <child link="left_gripper"/>
+  </joint>
+
+  <link name="left_gripper">
+    <contact>
+      <lateral_friction value="1.0"/>
+      <spinning_friction value="1.5"/>
+    </contact>
+    <visual>
+      <origin rpy="0.0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_collision.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0.0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_collision.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <joint name="left_tip_joint" type="fixed">
+    <parent link="left_gripper"/>
+    <child link="left_tip"/>
+  </joint>
+
+  <link name="left_tip">
+    <contact>
+      <lateral_friction value="1.0"/>
+      <spinning_friction value="1.5"/>
+    </contact>
+    <visual>
+      <origin rpy="0.0 0 0" xyz="0.3 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_tip.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </visual>
+    <collision>
+     <origin rpy="0.0 0 0" xyz="0.3 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_tip.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <joint name="right_gripper_joint" type="revolute">
+    <axis xyz="0 0 -1"/>
+    <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
+    <origin rpy="0 0 0" xyz="0.22 -0.1 0"/>
+    <parent link="base"/>
+    <child link="right_gripper"/>
+  </joint>
+
+  <link name="right_gripper">
+    <contact>
+      <lateral_friction value="1.0"/>
+      <spinning_friction value="1.5"/>
+    </contact>
+    <visual>
+      <origin rpy="-3.1415 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_collision.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </visual>
+         <collision>
+      <origin rpy="-3.1415 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_collision.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <joint name="right_tip_joint" type="fixed">
+    <parent link="right_gripper"/>
+    <child link="right_tip"/>
+  </joint>
+
+  <link name="right_tip">
+    <contact>
+      <lateral_friction value="1.0"/>
+      <spinning_friction value="1.5"/>
+    </contact>
+    <visual>
+      <origin rpy="-3.1415 0 0" xyz="0.3 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_tip.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </visual>
+	  <collision>
+    <origin rpy="-3.1415 0 0" xyz="0.3 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_tip.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </collision>
+
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+</robot>

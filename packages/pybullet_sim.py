@@ -11,6 +11,7 @@ class PybulletSimulation:
         self.gravity = gravity
         self.cam_param = cam_param
         self.cam_target = cam_target
+        self.flags = p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
 
     def configure(self):
         p.setTimeStep(self.time_step)
@@ -21,18 +22,24 @@ class PybulletSimulation:
         p.resetDebugVisualizerCamera(self.cam_param[0], self.cam_param[1], self.cam_param[2], self.cam_target)
     
     def load_table(self, position = (0,0,-2.9), orientation=(0,0,0,1), scaling = 5):
-        p.loadURDF("table/table.urdf", position, orientation, flags=p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES,globalScaling=scaling )
+        p.loadURDF("table/table.urdf", position, orientation, flags=self.flags,globalScaling=scaling)
+    
+    def load_tray(self,position = (0,0,0.25), orientation=(0,0,0,1), scaling = 5):
+        p.loadURDF("tray/traybox.urdf", position, orientation, flags=self.flags,globalScaling= scaling )
 
-    def load_playground1(self):
-        legos=[]
-        flags = p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
-        p.loadURDF("tray/traybox.urdf", [0, 0, 0], [0,0,0,1], flags=flags,globalScaling=7 )
-        legos.append(p.loadURDF("lego/lego.urdf",np.array([0.1, 0.3, 0.5]), flags=flags,globalScaling=7 ))
-        legos.append(p.loadURDF("lego/lego.urdf",np.array([-0.1, 0.3, 0.5]), flags=flags,globalScaling=7 ))
-        legos.append(p.loadURDF("lego/lego.urdf",np.array([0.1, 0.3, 0.7]), flags=flags,globalScaling=7 ))
-        p.loadURDF("sphere_small.urdf",np.array( [0, 0.3, 0.6]), flags=flags,globalScaling=7 )
-        p.loadURDF("sphere_small.urdf",np.array( [0, 0.3, 0.5]), flags=flags,globalScaling=7 )
-        p.loadURDF("sphere_small.urdf",np.array( [0, 0.3, 0.7]), flags=flags,globalScaling=7 )
+    def load_random_objects(self, count = 5, position = (0,0,1), orientation=(0,0,0,1), scaling = 5):
+        for num in np.random.randint(1000, size=count):
+            rand_position = np.array(position) + np.random.uniform(-1,1,3)
+            p.loadURDF(f"random_urdfs/{num:03}/{num:03}.urdf", rand_position, orientation, flags=self.flags,globalScaling=scaling)
+    
+    def load_common_objects(self, position = (0,0,1), orientation=(0,0,0,1), scaling = 7):
+        p.loadURDF("lego/lego.urdf",    np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
+        p.loadURDF("sphere_small.urdf", np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
+        p.loadURDF("domino/domino.urdf",np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
+        p.loadURDF("objects/mug.urdf",  np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
+        p.loadURDF("block.urdf",        np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
+        p.loadURDF("duck_vhacd.urdf",   np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
+        p.loadURDF("teddy_vhacd.urdf",  np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
 
     def connect(self):
         if p.connect(self.connection_mode) != -1: # connected
@@ -48,7 +55,7 @@ class Camera:
         self.fov = fov
 
         aspect = self.width / self.height
-        self.view_matrix = p.computeViewMatrixFromYawPitchRoll(cam_tar,distance,yaw,pitch,row,2)
+        self.view_matrix = p.computeViewMatrixFromYawPitchRoll(cam_tar,distance,yaw,pitch,row,1)
         self.projection_matrix = p.computeProjectionMatrixFOV(self.fov, aspect, self.near, self.far)
 
         _view_matrix = np.array(self.view_matrix).reshape((4, 4), order='F')

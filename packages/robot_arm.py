@@ -14,7 +14,7 @@ class RobotArm:
     A class to easily create and interact with robotic arm.
     """
     def __init__(self, offset = (0,0,0), orientation = (0,0,0,1), use_dynamics = True, name = 'my_robot',
-                    time_step = 1/60, joint_force = 1200, scaling = 1, ik_function = None):
+                    fps = 60, joint_force = 1200, scaling = 1, ik_function = None):
         # sympy vars
         self.links, self.joint_variables, self.constraints= [],[],[]
         self.subs_joints, self.subs_additional = [],[]
@@ -28,6 +28,7 @@ class RobotArm:
         self.use_dynamics = use_dynamics
         self.frames_to_complete = 20
         self.joint_force = joint_force
+        self.axis_limits = []
         # ik vars
         self.ik_joint_error = 0.02
         self.use_orientation_ik = True
@@ -43,6 +44,7 @@ class RobotArm:
         # capture image vars
         self.capture_image_button = None
         self.prev_button_state = 2
+        self.camera_offset = (0,0,0.5)
         # buttons
         self.quit_button = None
         self.pose_text = None
@@ -51,11 +53,11 @@ class RobotArm:
         self.rec_cnt = 1
         # connect to simulation
         if not p.isConnected():
-            sim = PybulletSimulation()
+            sim = PybulletSimulation(fps=fps)
             if sim.connect():
                 self.time_step = sim.time_step
         else:
-            self.time_step = time_step
+            self.time_step = 1/fps
     
     def add_pose_sliders(self,x,y,z):
         self.pose_sliders = []
@@ -102,6 +104,7 @@ class RobotArm:
     def add_joint_ids(self):
         self.joint_ids = []
         add_attachment_joints = False
+        add_constraints_if_foreign = False
         for i in range(p.getNumJoints(self.robot)): 
             joint_info = p.getJointInfo(self.robot,i)
             if joint_info[1] == b'attachment_joint' or add_attachment_joints:
@@ -113,7 +116,8 @@ class RobotArm:
             else:
                 if (joint_info[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE]):
                     self.joint_ids.append(i)
-                    if self.is_foreign:
+                    if self.is_foreign and (len(self.constraints) == 0 or add_constraints_if_foreign):
+                        add_constraints_if_foreign = True # if constraints is empty add them
                         self.constraints.append([joint_info[10], joint_info[8], joint_info[9], joint_info[11], True])   
         if add_attachment_joints is False:
             self.last_joint_id = i
@@ -174,9 +178,9 @@ class RobotArm:
                         np.deg2rad(p.readUserDebugParameter(self.pose_sliders[5]))])
                 
                 if self.ik_function:
-                    joint_targets = self.ik_function(position, orientation if self.use_orientation_ik else None)
+                    joint_targets = self.ik_function(self.limit_pos_targets(position), orientation if self.use_orientation_ik else None)
                 else:
-                    joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, position, 
+                    joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id,self.limit_pos_targets(position), 
                         orientation if self.use_orientation_ik else None, maxNumIterations=5)[:len(self.joint_ids)]
                     joint_targets = self.limit_joint_targets(joint_targets)        
 
@@ -190,7 +194,7 @@ class RobotArm:
                 self.actuate_attachment()
 
             link_state = p.getLinkState(self.robot,self.last_joint_id,computeForwardKinematics = True)  
-            self.capture_image(capture_now=False)
+            self.capture_image(camera_offset = self.camera_offset, capture_now=False)
             if use_draw_trajectory:
                 self.draw_trajectory(link_state[4],position,self.trajectory_lifetime)
             if use_display_pos_and_orn:
@@ -242,7 +246,7 @@ class RobotArm:
                     joint_targets = self.attachment_open_targets
         p.setJointMotorControlArray(self.robot,joint_ids,p.POSITION_CONTROL,joint_targets, forces=[20]*len(joint_ids))
     
-    def capture_image(self, link_state = None, offset_camera = (0,0,0.5), near = 0.1, far = 5, size = (320,320), fov = 40, capture_now = False):
+    def capture_image(self, link_state = None, camera_offset = (0,0,0.5), near = 0.1, far = 5, size = (320,320), fov = 40, capture_now = False):
         if link_state is None:
             link_state = p.getLinkState(self.robot,self.last_joint_id, computeForwardKinematics=True)
         if capture_now is False:
@@ -254,10 +258,10 @@ class RobotArm:
                     capture_now = True    
         if capture_now:
             rot = np.array(p.getMatrixFromQuaternion(link_state[5])).reshape(3,3)
-            offset = self.rotate_point(rot, offset_camera)
+            offset = self.rotate_point(rot, camera_offset)
             target = (link_state[4][0]+offset[0],link_state[4][1]+offset[1],link_state[4][2]+offset[2])
             orn = p.getEulerFromQuaternion(link_state[5])
-            camera = Camera(target,0.1,(0,np.rad2deg(orn[0])+90,np.rad2deg(orn[2])), near, far, size, fov)
+            camera = Camera(target,0.01,(np.rad2deg(orn[2]),np.rad2deg(-orn[0]),np.rad2deg(orn[1])), near, far, size, fov)
             camera.shot()
             return camera     
 
@@ -477,11 +481,13 @@ class RobotArm:
         closed: bool
             To draw the whole elipse
         """
-        if log_move:    
-            self.state_logging(f"{interpolation}_{start}_{end}"+ '' if param is None else str(param),True)
         self.hasPrevPose = [False]*5 # restart drawing
         x1,y1,z1,R1,P1,Y1 = start
         x2,y2,z2,R2,P2,Y2 = end
+        if log_move:
+            self.move2point((x1,y1,z1),(R1,P1,Y1)) # for cleaner start to log 
+            self.hasPrevPose = [False]*5 # restart drawing  
+            self.state_logging(f"{interpolation}_{start}_{end}"+ ('' if param is None else f"_{param}"),True)
         rot_mat = rotation_matrix_from_euler_angles(np.deg2rad(plane),'xyz')
         if interpolation == 'linear':
             for x,y,z,R,P,Y in zip(np.linspace(x1,x2,steps),np.linspace(y1,y2,steps),np.linspace(z1,z2,steps),
@@ -518,8 +524,6 @@ class RobotArm:
                     t = np.hstack((np.linspace(start_angle, 2*np.pi, int(steps*(2*np.pi-start_angle)/(2*np.pi-start_angle+end_angle)) ),
                     np.linspace(0, end_angle, int(steps*end_angle/(2*np.pi-start_angle+end_angle)) )))
             
-            
-
             for x,y,z,R,P,Y in zip(x_center + a*np.cos(t),y_center + b*np.sin(t),np.linspace(z1, z2, steps),
                                 np.linspace(R1,R2,steps),np.linspace(P1,P2,steps),np.linspace(Y1,Y2,steps)):
                 if not self.move2point(self.rotate_point(rot_mat,(x,y,z)),(R,P,Y)):
@@ -538,9 +542,8 @@ class RobotArm:
             Set (R,P,Y) angles.
         """
         steps = 0 
+        position = self.limit_pos_targets(position)
         while (p.isConnected()):
-            steps+=1
-            p.stepSimulation() 
             if self.ik_function:
                 joint_targets = self.ik_function(position, orientation)
             else:
@@ -557,16 +560,31 @@ class RobotArm:
             link_state = p.getLinkState(self.robot,self.last_joint_id,computeForwardKinematics = True)
             #self.display_pos_and_orn(link_state[4],link_state[5],self.last_joint_id)
             self.draw_trajectory(link_state[4],position,self.trajectory_lifetime)
-            
+
             if self.quit_simulation():
                 return False
             if self.use_dynamics and (np.allclose([p.getJointState(self.robot,joint_id)[0] for joint_id in self.joint_ids],
                                         joint_targets,self.ik_joint_error) or steps > self.frames_to_complete):
                 break
             elif not self.use_dynamics and steps > 1:
-                break
+                break   
+
+            steps+=1
+            p.stepSimulation() 
             time.sleep(self.time_step)
         return True
+    
+    def set_position_limits(self, x_min, x_max, y_min, y_max, z_min, z_max):
+        self.axis_limits = [(x_min,x_max), (y_min,y_max), (z_min,z_max)]
+
+    def limit_pos_targets(self,position):
+        new_position = []
+        for i,axis in enumerate(position):
+            if self.axis_limits:
+                new_position.append(np.clip(axis, self.axis_limits[i][0],  self.axis_limits[i][1]))
+            else:
+                new_position.append(axis)
+        return new_position
 
     def limit_joint_targets(self, joint_targets):
         new_joint_targets = []
@@ -577,8 +595,8 @@ class RobotArm:
     def rotate_point(self, rot_mat, point):
         return point[0] * rot_mat[:3, 0] + point[1] * rot_mat[:3, 1] + point[2] * rot_mat[:3, 2]
 
-    def add_attachment(self, name = 'gripper', orientation = (-np.pi/2,0,0), position = (0,0,0.3)):
-        self.attachment = [name,orientation,position]
+    def add_attachment(self, name = 'prismatic_gripper', orientation = (-90,0,0), position = (0,0,0.3)):
+        self.attachment = [name,np.deg2rad(orientation),position]
 
     def add_revolute_joint(self, theta, d, a, alpha, lower = -180, upper = 180, velocity = 2.6, effort = 10, visual = True):
         """

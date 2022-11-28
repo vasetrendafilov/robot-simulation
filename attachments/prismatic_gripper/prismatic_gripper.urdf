@@ -1,4 +1,4 @@
-<robot name="gripper">
+<robot name="prismatic_gripper">
   <link name="base">
   <inertial>
     <mass value="1"/>
@@ -31,7 +31,7 @@
   </inertial>
     <visual>
       <geometry>
-          <mesh filename="attachments/gripper/finger.stl" scale="3.7 3.7 3.7"/>
+          <mesh filename="attachments/prismatic_gripper/finger.stl" scale="3.7 3.7 3.7"/>
       </geometry>
       <origin rpy="1.57 1.57 0" xyz="0.02 0.23 0"/>
       <material name="finger">
@@ -63,7 +63,7 @@
   </inertial>
     <visual>
        <geometry>
-          <mesh filename="attachments/gripper/finger.stl" scale="3.7 3.7 3.7"/>
+          <mesh filename="attachments/prismatic_gripper/finger.stl" scale="3.7 3.7 3.7"/>
       </geometry>
       <origin rpy="1.57 -1.57 0" xyz="-0.02 0.23 0"/>
       <material name="finger">
