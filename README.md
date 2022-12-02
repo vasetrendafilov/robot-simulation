@@ -16,8 +16,6 @@
   </p>
 </div>
 
-
-
 <!-- TABLE OF CONTENTS -->
 <details>
   <summary>Table of Contents</summary>
@@ -56,13 +54,11 @@
   </ol>
 </details>
 
-
-
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 ![Demo](images/demo.png)
 
-Tha main goal of this project is to create a robot arm simulator where you can easily create or import an existing Unified Robot Description Format `urdf`, and interact with the robot in a simulated world with generated obstacles and challenges. The simulator I am using is `pybullet` which comes with all the necessary components to build an extensive and complicated simulated world. The backbone for creating the robot arm is made with `sympy` and the all the utilities are pulled from [fundamentals-of-robotics](https://gitlab.com/feeit-freecourseware/fundamentals-of-robotics). There are also dedicated packages for building the world around the robot arm and converting the Denavit–Hartenberg `DH` parameters to `urdf` so it can be imported in the simulation. In the `robot_arms/` section there
+Tha main goal of this project is to create a robot arm simulator where you can easily create or import an existing Unified Robot Description Format urdf, and interact with the robot in a simulated world with generated obstacles and challenges. The simulator I am using is `pybullet` which comes with all the necessary components to build an extensive and complicated simulated world. The backbone for creating the robot arm is made with `sympy` and the all the utilities are pulled from [fundamentals-of-robotics](https://gitlab.com/feeit-freecourseware/fundamentals-of-robotics). There are also dedicated packages for building the world around the robot arm and converting the Denavit–Hartenberg DH parameters to urdf so it can be imported in the simulation. In the `robot_arms/` section there
 are real arms like [panda](https://www.franka.de/) and [xarm](https://www.ufactory.cc/xarm-collaborative-robot). Also there is the  Mitsubishi RV-2F-Q arm where the program can also convert the logs to RT Toolbox program file and run the program on the real arm.
 
 ### Built With
@@ -103,7 +99,7 @@ For the software side to download the necessary packages you can choose [conda](
 
 This project comes with three jupyter notebooks where there are provided examples of all the features:
 
-* [custom_robot_arms](https://github.com/vasetrendafilov/robot-simulation/blob/main/custom_robot_arms.ipynb) where you can create custom robot arms using `DH` parameters, interact with them and calculate `DH` matrix and jacobian of the robot.
+* [custom_robot_arms](https://github.com/vasetrendafilov/robot-simulation/blob/main/custom_robot_arms.ipynb) where you can create custom robot arms using DH parameters, interact with them and calculate DH matrix and jacobian of the robot.
 
 * [foreign_robot_arms](https://github.com/vasetrendafilov/robot-simulation/blob/main/foreign_robot_arms.ipynb) where you can import existing robot arms and interact with them.
 
@@ -111,7 +107,7 @@ This project comes with three jupyter notebooks where there are provided example
 
 ### Data structure
 
-When you save a new robot the program creates `robot_arms/robot_name/` directory and saves the `urdf` file. All the logs are saved in the same directory under the folder `logs`. When you add an attachment the file is expected to be in `attachments/attachment_name` and the libraries are expected to be under `packages`. The data structure three for running the project is: 
+When you save a new robot the program creates `robot_arms/robot_name/` directory and saves the urdf file. All the logs are saved in the same directory under the folder `logs/`. When you add an attachment the file is expected to be in `attachments/attachment_name` and the libraries are expected to be under `packages/`. The data structure three for running the project is: 
 
 * attachments/
     * attachment_name/
@@ -133,15 +129,15 @@ When you save a new robot the program creates `robot_arms/robot_name/` directory
 
 ### Making a new attachment
 
-To make a new attachment to be added to the robot arm  you have to follow this convention. Make a new folder in the attachments folder and put inside your relevant files, the main `urdf` has to be the same name with the folder and the first link in the file has to be called base. Then you have to check if your attachment is compatible with the function `actuate_attachment`, for now it's coded to open and close a gripper. For similar grippers you can just change the `attachment_open_targets` and  `attachment_close_targets`
+To make a new attachment to be added to the robot arm  you have to follow this convention. Make a new folder in the attachments folder and put inside your relevant files, the main urdf has to be the same name with the folder and the first link in the file has to be called base. Then you have to check if your attachment is compatible with the function `actuate_attachment()`, for now it's coded to open and close a gripper. For similar grippers you can just change the `attachment_open_targets` and  `attachment_close_targets`
 
 ### Importing a foreign robot arm
 
-Make sure the file path for the meshes is correctly entered and remove any [xacro](http://wiki.ros.org/xacro) macros which does not work with pybullet. You have panda and xarm in the `robot_arms` directory as examples to compare. Also if the robot arm has an attachment rename the joint that connects it to the robot arm to `attachment_joint` so the program can correctly find the joint ids.
+Make sure the file path for the meshes is correctly entered and remove any [xacro](http://wiki.ros.org/xacro) macros which does not work with pybullet. You have panda and xarm in the `robot_arms/` directory as examples to compare. Also if the robot arm has an attachment rename the joint that connects it to the robot arm to `attachment_joint` so the program can correctly find the joint ids.
 
 ### Making a new pybullet world
 
-Using the PybulletSimulation class in `pybullet_sim.py` you can make a new function to add objects to the simulation. For now I've just used the `urdf` files provided by pybullet and made the some basic objects like work table, tray and all the common objects found in the data provided by pybullet.
+Using the PybulletSimulation class in `pybullet_sim.py` you can make a new function to add objects to the simulation. For now I've just used the urdf files provided by pybullet and made the some basic objects like work table, tray and all the common objects found in the data provided by pybullet.
 
 ### Connecting with Mitsubishi RV-2F-Q arm to RT Toolbox 2
 
@@ -182,12 +178,12 @@ The communication between the pc and CR750-Q controller is trough ethernet cable
 
 ## Roadmap
 
-- [x] Create `DH` representation of robot
+- [x] Create DH representation of robot
     - [X] Add all types of joints
-    - [x] Calculate `DH` matrix
+    - [x] Calculate DH matrix
     - [X] Calculate jacobian
     - [ ] Add internal values to link
-- [x] Convert `DH` parameters to `urdf`
+- [x] Convert DH parameters to urdf
     - [X] Revolute joints
     - [x] Prismatic joints
     - [X] Fixed joints
@@ -209,7 +205,7 @@ The communication between the pc and CR750-Q controller is trough ethernet cable
     - [x] Circular interpolation
     - [X] Examples with drawing letters
     - [ ] Another types of interpolation
-- [ ] Create more worlds in `pybullet_sim`
+- [ ] Create more worlds in `pybullet_sim.py`
 - [ ] Control the Mitsubishi robot arm directly
 - [ ] Make a new class to control mobile robots
 - [ ] Implement mobile robot arm from [pybullet examples](https://github.com/bulletphysics/bullet3/blob/master/examples/pybullet/examples/inverse_kinematics_husky_kuka.py)
@@ -223,9 +219,9 @@ The communication between the pc and CR750-Q controller is trough ethernet cable
 Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**. If you have a suggestion that would make this better, please fork the repo and create a pull request or uou can also simply open an issue. Don't forget to give the project a star! Thanks again!
 
 1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
+2. Create your Feature Branch (`git checkout -b feature/NewFeature`)
+3. Commit your Changes (`git commit -m 'Add some NewFeature'`)
+4. Push to the Branch (`git push origin feature/NewFeature`)
 5. Open a Pull Request
 
 <!-- ACKNOWLEDGMENTS -->
