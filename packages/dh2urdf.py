@@ -35,7 +35,7 @@ class DH2Urdf(object):
         row_format = "{!s:>10s}" * (len(names_list))
         self.xml += row_format.format(*names_list)+str('\n')
         for DH_param, constraint in zip(self.dh_params, self.constraints):
-            a = [self.joint_names[int(DH_param[0])]] + [round(float(i),4)for i in DH_param[1:]] + [round(i,4)for i in constraint]
+            a = [self.joint_names[int(DH_param[0])]] + [round(float(i),4) for i in DH_param[1:]] + [round(i,4) for i in constraint]
             self.xml += row_format.format(*a)+str('\n')
         self.xml += "-->\n"
 

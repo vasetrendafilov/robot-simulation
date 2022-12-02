@@ -13,7 +13,7 @@ class RobotArm:
     """ Class to easily create, import and interact with robotic arm."""
 
     def __init__(self, position=(0, 0, 0), orientation=(0, 0, 0, 1), name='my_robot', ik_function=None,fps=60, 
-                    joint_forces=1200, scaling=1, use_dynamics=True, use_draw_trajectory=True, use_display_pos_and_orn=False):
+                    joint_forces=1000, scaling=1, use_dynamics=True, use_draw_trajectory=True, use_display_pos_and_orn=False):
         """ Initialise all the robot variables and connect to the pybullet simulation.
 
             Parameters
@@ -54,11 +54,12 @@ class RobotArm:
         self.joint_forces = joint_forces
         self.axis_limits = []
         # ik vars
-        self.ik_joint_error = 0.02
+        self.ik_joint_error = 0.01
         self.use_orientation_ik = True
         self.ik_function = ik_function
         # attachment vars
         self.attachment_joint_ids = []
+        self.change_attachment_force = False
         self.attachment, self.attachment_button = None, None
         self.attachment_open_targets, self.attachment_close_targets = (0,0), (0.3,-0.3)
         # draw trajectory vars
@@ -190,6 +191,8 @@ class RobotArm:
         self.find_joint_ids()
         self.add_joint_frame_lines()
         self.reset_joints()
+        if self.attachment_joint_ids: # open the gripper so it works with move2point
+            self.actuate_attachment(joint_targets = self.attachment_open_targets)
     
     def interact(self, kinematics='forward', use_orientation_ik=True, x_range=(-5, 5, 1), y_range=(-5, 5, 1), z_range=(-5, 5, 1)):
         """ Interact with the robot arm where the robot arm is loaded in pybullet, depending on the kinematics 
@@ -328,7 +331,7 @@ class RobotArm:
             joint_ids: list
                 Chose which joints to actuate 
             joint_targets: list
-                Provide the joints target
+                Provide the joints target for use when controlling with code
         """
         if joint_ids is None:
             joint_ids = self.attachment_joint_ids
@@ -341,10 +344,30 @@ class RobotArm:
                     joint_targets = self.attachment_close_targets
                 else:
                     joint_targets = self.attachment_open_targets
-        # dynamically control the joints
-        p.setJointMotorControlArray(self.robot, joint_ids, p.POSITION_CONTROL, joint_targets, forces=[20]*len(joint_ids))
+                    self.change_attachment_force = False 
+            # dynamically control the joints
+            max_force, joint_stopped = 500, True
+            for joint_state in p.getJointStates(self.robot, self.attachment_joint_ids):
+                if abs(joint_state[3]) < 100:
+                    joint_stopped = False
+            if (joint_stopped and joint_targets == self.attachment_close_targets) or self.change_attachment_force: 
+                self.change_attachment_force = True 
+                max_force = 50
+            p.setJointMotorControlArray(self.robot, joint_ids, p.POSITION_CONTROL, joint_targets, forces=[max_force]*len(joint_ids))
+        else: # make at least 30 steps to close or open the attachment
+            for step in range(30):
+                p.stepSimulation()
+                max_force, joint_stopped = 500, True
+                for joint_state in p.getJointStates(self.robot, self.attachment_joint_ids):
+                    if abs(joint_state[3]) < 100:
+                        joint_stopped = False
+                if (joint_stopped and joint_targets == self.attachment_close_targets) or self.change_attachment_force: 
+                    self.change_attachment_force = True 
+                    max_force = 50 
+                p.setJointMotorControlArray(self.robot, joint_ids, p.POSITION_CONTROL, joint_targets, forces=[max_force]*len(joint_ids))
+                time.sleep(self.time_step)
     
-    def capture_image(self, link_state, camera_offset=(0, 0, 0.5), near=0.1, far=5, size=(320, 320), fov=40, capture_now=False):
+    def capture_image(self, link_state = None, camera_offset=(0, 0, 0.5), near=0.1, far=5, size=(320, 320), fov=40, capture_now=False):
         """ Capture image from the position and orientation of the link, in this case the image is taken in line of the z axis. 
             You can set all the parameters from here and there is an option to capture the image imminently and return the image.  
         
@@ -363,6 +386,8 @@ class RobotArm:
             capture_now: bool
                 Optional argument to take the shot trough code
         """
+        if link_state is None:
+            link_state = p.getLinkState(self.robot, self.last_joint_id)
         if capture_now is False:
             if self.capture_image_button is None: # add button to capture image
                 self.capture_image_button = p.addUserDebugParameter("Capture Image", 1, 0, 1)
@@ -545,7 +570,7 @@ class RobotArm:
             dh_list = line.strip().split()
             if dh_list[0] == 'revolute':
                 self.add_revolute_joint(sp.symbols(f'theta{i+1}'),float(dh_list[2]),float(dh_list[3]),float(dh_list[4]),
-                    float(dh_list[6]),float(dh_list[7]),float(dh_list[8]),float(dh_list[5]),int(dh_list[9]))
+                    np.rad2deg(float(dh_list[6])),np.rad2deg(float(dh_list[7])),float(dh_list[8]),float(dh_list[5]),int(dh_list[9]))
             elif dh_list[0] == 'prismatic':
                 self.add_prismatic_joint(float(dh_list[1]),sp.symbols(f'd{i+1}'),float(dh_list[3]),float(dh_list[4]),
                     float(dh_list[6]),float(dh_list[7]),float(dh_list[8]),float(dh_list[5]),int(dh_list[9]))
@@ -560,7 +585,7 @@ class RobotArm:
         self.file_head = file_head
         self.name = tail[:-5]
 
-    def write_text(self, text, position, orientation, spacing=1, plane=(0, 0, 0), scale=0.5):
+    def write_text(self, text, position, orientation, spacing=1, plane=(0, 0, 0), scale=0.5, log_text=False):
         """ Write text at a desired position and orientation. Set the spacing and scale of the letters.   
         
             Parameters
@@ -577,10 +602,16 @@ class RobotArm:
                 Rotate the text around the 3 axes
             scale: float
                 Set the scale of the letters
+            log_text: bool
+                Choose to log the text
         """
+        if log_text:
+            self.state_logging(text,'start')
         for letter in text:
             self.write_letter(letter, position, orientation, plane, scale)
             position[1] += spacing
+        if log_text:
+            self.state_logging(start_stop='stop')
 
     def write_letter(self, letter, position, orientation, plane=(0, 0, 0), s=0.5):
         """ Write letter at a desired position and orientation. Set the plane and scale of the letter.   
@@ -714,9 +745,9 @@ class RobotArm:
         
             Parameters
             ----------
-            position: tuple
+            position: tuple (x, y, z)
                 Target coordinates
-            orientation: tuple in degrees
+            orientation: tuple (R, P, Y) in degrees
                 Target orientation of the end effector
         """
         steps = 0 
@@ -725,8 +756,8 @@ class RobotArm:
             if self.ik_function:
                 joint_targets = self.ik_function(position, orientation)
             else:
-                joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, position, 
-                    p.getQuaternionFromEuler(np.deg2rad(orientation)), maxNumIterations=5)[:len(self.joint_ids)]
+                joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, 
+                                    position, p.getQuaternionFromEuler(np.deg2rad(orientation)))[:len(self.joint_ids)]
                 joint_targets = self.limit_joint_targets(joint_targets)
 
             if self.use_dynamics:
@@ -755,12 +786,14 @@ class RobotArm:
             time.sleep(self.time_step)
         return True
     
+    def set_dynamic_conditions(self, frames_to_complete=20, ik_joint_error = 0.01):
+        """ Set frames to complete and inverse kinematics joint error flags for stopping the simulation. """
+        self.frames_to_complete = frames_to_complete
+        self.ik_joint_error = ik_joint_error
+    
     def get_joint_states(self):
-        """ Returns all the joint states of the robot arm. """
-        joint_states = []
-        for joint_id in self.joint_ids:
-            joint_states.append(p.getJointState(self.robot, joint_id)[0])
-        return joint_states
+        """ Returns joints position, velocity and applied torque. """
+        return [(row[0],row[1],row[3]) for row in p.getJointStates(self.robot, self.joint_ids)]
 
     def set_position_limits(self, x_min, x_max, y_min, y_max, z_min, z_max):
         """ Set lower and upper limits for each axis. """
@@ -815,9 +848,9 @@ class RobotArm:
                 Displacement along x-axis
             alpha: symbol or number
                 Angle of rotation around x-axis
-            lower: number
+            lower: number in degrees
                 Lower limit of the joint
-            upper: number
+            upper: number in degrees
                 Upper limit of the joint
             velocity: number
                 Maximal velocity
@@ -831,7 +864,7 @@ class RobotArm:
         self.subs_joints.append((theta, 0))
         self.constraints.append([effort, np.deg2rad(lower), np.deg2rad(upper), velocity, visual])
 
-    def add_prismatic_joint(self, theta, d, a, alpha, lower = 0.8, upper = 3, velocity = 2.6, effort = 10, visual = True):
+    def add_prismatic_joint(self, theta, d, a, alpha, lower = 0.7, upper = 3, velocity = 2.6, effort = 10, visual = True):
         """Add a prismatic joint to the robotic arm according to the DH convention and set the joint constraints.
     
             Parameters

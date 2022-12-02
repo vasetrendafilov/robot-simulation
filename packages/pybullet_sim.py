@@ -38,21 +38,25 @@ class PybulletSimulation:
         p.configureDebugVisualizer(lightPosition= (0,0,5))
         p.resetDebugVisualizerCamera(self.cam_param[0], self.cam_param[1], self.cam_param[2], self.cam_target)
     
-    def load_table(self, position = (0,0,-2.9), orientation=(0,0,0,1), scaling = 5):
+    def load_table(self, position = (0,0,-3.15), orientation=(0,0,0,1), scaling = 5):
         """ Load a working table for the robot. """
         p.loadURDF("table/table.urdf", position, orientation, flags=self.flags,globalScaling=scaling)
     
-    def load_tray(self,position = (0,0,0.25), orientation=(0,0,0,1), scaling = 5):
+    def load_tray(self,position = (0,0,0.1), orientation=(0,0,0,1), scaling = 5):
         """ Load a tray for holding objects. """
         p.loadURDF("tray/traybox.urdf", position, orientation, flags=self.flags,globalScaling= scaling )
+    
+    def load_lego(self,position = (0,0,1), orientation=(0,0,0,1), scaling = 5):
+        """ Load a tray for holding objects. """
+        p.loadURDF("lego/lego.urdf",  position, orientation, flags=self.flags,globalScaling=scaling)
 
-    def load_random_objects(self, count = 5, position = (0,0,1.2), orientation=(0,0,0,1), scaling = 5):
+    def load_random_objects(self, count = 5, position = (0,0,1.5), orientation=(0,0,0,1), scaling = 5):
         """ Load random objects found in pybullet data. """
         for num in np.random.randint(1000, size=count):
             rand_position = np.array(position) + np.random.uniform(-1,1,3)
             p.loadURDF(f"random_urdfs/{num:03}/{num:03}.urdf", rand_position, orientation, flags=self.flags,globalScaling=scaling)
     
-    def load_common_objects(self, position = (0,0,1.2), orientation=(0,0,0,1), scaling = 7):
+    def load_common_objects(self, position = (0,0,1.5), orientation=(0,0,0,1), scaling = 7):
         """ Load common objects found in pybullet data. """
         p.loadURDF("lego/lego.urdf",    np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
         p.loadURDF("sphere_small.urdf", np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
@@ -109,7 +113,7 @@ class Camera:
         self.rgb, self.depth, self.seg = rgb, depth, seg
 
     def rgbd_2_world(self, w, h, d):
-        """ Convert rdgd to world coordinates.
+        """ Convert rgbd to world coordinates.
 
             Parameters
             ----------
@@ -135,7 +139,7 @@ class Camera:
         return position[:3]
 
     def rgbd_2_world_batch(self, depth):
-        """ Convert rdgd to world coordinates in batch.
+        """ Convert rgbd to world coordinates in batch.
 
             Parameters
             ----------
