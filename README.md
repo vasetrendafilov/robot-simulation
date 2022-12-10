@@ -38,15 +38,19 @@
       <ul>
         <li><a href="#jupyter-notebooks">Jupyter notebooks</a></li>
         <li><a href="#data-structure">Data structure</a></li>
-        <li><a href="#making-a-new-attachment">Making a new attachment</a></li>
-        <li><a href="#importing-a-foreign-robot-arm">Importing a foreign robot arm</a></li>
-        <li><a href="#making-a-new-pybullet-world">Making a new pybullet world</a></li>
         <li><a href="#connecting-with-mitsubishi-rv-2f-q-arm-to-rt-toolbox-2">Connecting with Mitsubishi RV-2F-Q arm to RT Toolbox 2</a></li>
       </ul>
     </li>
     <li><a href="#hotkeys-list-for-pybullet">Hotkeys list for pybullet</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#contributing">Contributing</a></li>
+    <li>
+      <a href="#contributing">Contributing</a>
+      <ul>
+        <li><a href="#making-a-new-attachment">Making a new attachment</a></li>
+        <li><a href="#importing-a-foreign-robot-arm">Importing a foreign robot arm</a></li>
+        <li><a href="#making-a-new-pybullet-world">Making a new pybullet world</a></li>
+      </ul>
+    </li>
     <li><a href="#acknowledgments">Acknowledgments</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
@@ -74,21 +78,24 @@ are real arms like [panda](https://www.franka.de/) and [xarm](https://www.ufacto
 
 ### Prerequisites
 
-For the software side to download the necessary packages you can choose [conda](https://docs.conda.io/en/latest/miniconda.html) or [pip](https://pypi.org/project/pip/), I will use conda in the installation part.
+Basic software applications used by the package is python with a suitable library installer and a web browser for using Jupiter notebooks. A popular package installation tool used in this project is mini conda which is a free minimal installer for conda. You can install it following this link [conda](https://docs.conda.io/en/latest/miniconda.html).
 
 ### Installation
 
-1. Create environment
-   ```sh
-   conda create --name robot_simulation -c conda-forge pybullet jupyterlab sympy
-   ```
-2. Clone repo
+1. Clone repo
    ```sh
    git clone https://github.com/vasetrendafilov/robot-simulation
    ```
-3. Activate environment and run jupyter lab
+2. Create environment
+   ```sh
+   conda create --name robot_simulation -c conda-forge pybullet jupyterlab sympy
+   ```
+3. Activate environment
    ```sh
    conda activate robot_simulation
+   ```
+4. Run jupyter lab
+   ```sh
    jupyter lab
    ```
 <p align="right">(<a href="#top">back to top</a>)</p>
@@ -97,13 +104,13 @@ For the software side to download the necessary packages you can choose [conda](
 
 ### Jupyter notebooks
 
-This project comes with three jupyter notebooks where there are provided examples of all the features:
+This project comes with three jupyter notebooks where all the functionalities of the software package are implemented. The following subsections will explain all jupiter notebooks in detail with all the steps how to create or import a robotic arm, control it and explain all the simulation modules.
 
-* [custom_robot_arms](https://github.com/vasetrendafilov/robot-simulation/blob/main/custom_robot_arms.ipynb) where you can create custom robot arms using DH parameters, interact with them and calculate DH matrix and jacobian of the robot.
+* [modular_robot_arms](https://github.com/vasetrendafilov/robot-simulation/blob/main/modular_robot_arms.ipynb) where you can create custom robot arms using DH parameters, interact with them and calculate DH matrix and jacobian of the robot.
 
-* [foreign_robot_arms](https://github.com/vasetrendafilov/robot-simulation/blob/main/foreign_robot_arms.ipynb) where you can import existing robot arms and interact with them.
+* [popular_robot_arms](https://github.com/vasetrendafilov/robot-simulation/blob/main/popular_robot_arms.ipynb) where you can import existing robot arms and interact with them.
 
-* [Mitsubishi_robot_arm](https://github.com/vasetrendafilov/robot-simulation/blob/main/Mitsubishi_robot_arm.ipynb) where you interact with Mitsubishi RV-2F-Q arm, setup the robot to move trough code and convert the logs to RT Toolbox 2 program file.
+* [mitsubishi_robot_arm](https://github.com/vasetrendafilov/robot-simulation/blob/main/mitsubishi_robot_arm.ipynb) where you interact with Mitsubishi RV-2F-Q arm, setup the robot to move trough code and convert the logs to RT Toolbox 2 program file.
 
 ### Data structure
 
@@ -127,19 +134,7 @@ When you save a new robot the program creates `robot_arms/robot_name/` directory
         * robot_name.urdf
 * my_program.ipynb
 
-### Making a new attachment
-
-To make a new attachment to be added to the robot arm  you have to follow this convention. Make a new folder in the attachments folder and put inside your relevant files, the main urdf has to be the same name with the folder and the first link in the file has to be called base. Then you have to check if your attachment is compatible with the function `actuate_attachment()`, for now it's coded to open and close a gripper. For similar grippers you can just change the `attachment_open_targets` and  `attachment_close_targets`
-
-### Importing a foreign robot arm
-
-Make sure the file path for the meshes is correctly entered and remove any [xacro](http://wiki.ros.org/xacro) macros which does not work with pybullet. You have panda and xarm in the `robot_arms/` directory as examples to compare. Also if the robot arm has an attachment rename the joint that connects it to the robot arm to `attachment_joint` so the program can correctly find the joint ids.
-
-### Making a new pybullet world
-
-Using the PybulletSimulation class in `pybullet_sim.py` you can make a new function to add objects to the simulation. For now I've just used the urdf files provided by pybullet and made the some basic objects like work table, tray and all the common objects found in the data provided by pybullet.
-
-### Connecting with Mitsubishi RV-2F-Q arm to RT Toolbox 2
+### Connect Mitsubishi RV-2F-Q arm to RT Toolbox 2
 
 The communication between the pc and CR750-Q controller is trough ethernet cable. The cable is connected to the plc ethernet port of the CR750-Q and goes strait in the pc. The robot controller parameters for TCP/IP communication are already set. First in windows you have to go to `Control Panel > Network and Internet > Network and Sharing Center > Change adapter settings > Select the Ethernet Properties > Choose the TCP/IPv4 properties` and set the IPv4 Properties like the image bellow. In the RT Toolbox 2 program create a new project and copy the parameters from the picture bellow. 
 
@@ -207,6 +202,7 @@ The communication between the pc and CR750-Q controller is trough ethernet cable
     - [ ] Another types of interpolation
 - [ ] Create more worlds in `pybullet_sim.py`
 - [ ] Control the Mitsubishi robot arm directly
+- [ ] Implement inverse dynamics
 - [ ] Make a new class to control mobile robots
 - [ ] Implement mobile robot arm from [pybullet examples](https://github.com/bulletphysics/bullet3/blob/master/examples/pybullet/examples/inverse_kinematics_husky_kuka.py)
 - [ ] Implement the [tossing bot](https://pybullet.org/wordpress/index.php/2019/03/30/tossingbot-learning-to-throw-arbitrary-objects-with-residual-physics/)
@@ -224,12 +220,26 @@ Contributions are what make the open source community such an amazing place to l
 4. Push to the Branch (`git push origin feature/NewFeature`)
 5. Open a Pull Request
 
+
+### Making a new attachment
+
+To make a new attachment to be added to the robot arm  you have to follow this convention. Make a new folder in the attachments folder and put inside your relevant files, the main urdf has to be the same name with the folder and the first link in the file has to be called base. Then you have to check if your attachment is compatible with the function `actuate_attachment()`, for now it's coded to open and close a gripper. For similar grippers you can just change the `attachment_open_targets` and  `attachment_close_targets`
+
+### Importing a foreign robot arm
+
+Make sure the file path for the meshes is correctly entered and remove any [xacro](http://wiki.ros.org/xacro) macros which does not work with pybullet. You have panda and xarm in the `robot_arms/` directory as examples to compare. Also if the robot arm has an attachment rename the joint that connects it to the robot arm to `attachment_joint` so the program can correctly find the joint ids.
+
+### Making a new pybullet world
+
+Using the PybulletSimulation class in `pybullet_sim.py` you can make a new function to add objects to the simulation. For now I've just used the urdf files provided by pybullet and made the some basic objects like work table, tray and all the common objects found in the data provided by pybullet.
+
+
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
 * [fundamentals-of-robotics](https://gitlab.com/feeit-freecourseware/fundamentals-of-robotics) as the base for this project
 * [DH2Urdf](https://akintokinematics.com/automatic-urdf-generation-from-dh-parameters/) improvement on this project
-* [melfa_robot](https://github.com/tork-a/melfa_robot) copied and changed to work with Mitsubishi RV-2F-Q arm
+* [melfa_robot](https://github.com/tork-a/melfa_robot) copied and changed urdf to work with Mitsubishi RV-2F-Q arm
 
 <!-- LICENSE -->
 ## License

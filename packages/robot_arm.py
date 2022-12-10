@@ -61,7 +61,7 @@ class RobotArm:
         self.attachment_joint_ids = []
         self.change_attachment_force = False
         self.attachment, self.attachment_button = None, None
-        self.attachment_open_targets, self.attachment_close_targets = (0,0), (0.3,-0.3)
+        self.set_attachment_targets()
         # draw trajectory vars
         self.use_draw_trajectory = use_draw_trajectory
         self.trajectory_lifetime = 5
@@ -81,8 +81,7 @@ class RobotArm:
         # connect to simulation
         if not p.isConnected():
             sim = PybulletSimulation(fps=fps)
-            if sim.connect():
-                self.time_step = sim.time_step
+            self.time_step = sim.time_step
         else:
             self.time_step = 1/fps
     
@@ -299,8 +298,8 @@ class RobotArm:
         """
         if (self.hasPrevPose[line_index] is True): # don't draw the first time 
             if target:
-                p.addUserDebugLine(self.prevPose1[line_index], target, [0, 0, 0.3], 1, life_time)
-            p.addUserDebugLine(self.prevPose2[line_index], current, [1, 0, 0], 1, life_time)
+                p.addUserDebugLine(self.prevPose1[line_index], target, [0, 0, 0.3], 1.3, life_time)
+            p.addUserDebugLine(self.prevPose2[line_index], current, [1, 0, 0], 1.3, life_time)
         self.prevPose1[line_index] = target
         self.prevPose2[line_index] = current
         self.hasPrevPose[line_index] = True
@@ -367,6 +366,11 @@ class RobotArm:
                 p.setJointMotorControlArray(self.robot, joint_ids, p.POSITION_CONTROL, joint_targets, forces=[max_force]*len(joint_ids))
                 time.sleep(self.time_step)
     
+    def set_attachment_targets(self, attachment_open_targets=(0, 0), attachment_close_targets=(0.3, -0.3)):
+        """ Set attachment open and close targets. """
+        self.attachment_open_targets = attachment_open_targets
+        self.attachment_close_targets = attachment_close_targets
+
     def capture_image(self, link_state = None, camera_offset=(0, 0, 0.5), near=0.1, far=5, size=(320, 320), fov=40, capture_now=False):
         """ Capture image from the position and orientation of the link, in this case the image is taken in line of the z axis. 
             You can set all the parameters from here and there is an option to capture the image imminently and return the image.  
@@ -526,7 +530,7 @@ class RobotArm:
 
             if step_index == recordNum / objectNum - 1 and skim_trough is False:
                 break # break condition for the last log
-            if self.quit_simulation():
+            if skim_trough and self.quit_simulation():
                 break
             time.sleep(self.time_step)
 
@@ -773,8 +777,6 @@ class RobotArm:
             if self.use_display_pos_and_orn:
                 self.display_pos_and_orn(link_state[4], link_state[5], self.last_joint_id)
 
-            if self.quit_simulation():
-                return False
             # end condition if the target and current joints are close or enough steps are completed
             if self.use_dynamics and (np.allclose([p.getJointState(self.robot,joint_id)[0] for joint_id in self.joint_ids],
                                         joint_targets,self.ik_joint_error) or steps > self.frames_to_complete):
