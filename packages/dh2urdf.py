@@ -1,6 +1,6 @@
 import numpy as np
 
-class DH2Urdf(object):
+class DH2Urdf:
     """ Class to convert dh parameters to urdf and save the robotic arm."""
 
     def __init__(self, dh_params, constraints, attachment = None):
@@ -43,7 +43,7 @@ class DH2Urdf(object):
         self.dh_params.append((4,0,0,0,0)) 
         self.constraints.append([True]) 
         
-        self.xml += "<robot name='robot'>\n" # robot colors
+        self.xml += "<robot name='robot_arm'>\n" # robot arm colors
         self.xml += "\t<material name='grey'>\n\t\t<color rgba='0.6 0.6 0.6 1'/>\n\t</material>\n"
         self.xml += "\t<material name='white'>\n\t\t<color rgba='1 1 1 1'/>\n\t</material>\n"
 

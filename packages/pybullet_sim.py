@@ -7,7 +7,7 @@ class PybulletSimulation:
     """ Class to create the world in the simulation. """
 
     def __init__(self, connection_mode=p.GUI, fps=60, gravity=(0, 0, -9.8), cam_param=(9, 15, -20), cam_target=(0, 0, 0)):
-        """ Initialise all the simulation variables.
+        """ Initialise all the simulation variables and connect to pybullet simulation.
 
             Parameters
             ----------
@@ -28,7 +28,7 @@ class PybulletSimulation:
         self.cam_param = cam_param
         self.cam_target = cam_target
         self.flags = p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
-        if p.connect(self.connection_mode) != -1: # connected
+        if p.connect(self.connection_mode) != -1: # check the connection
             self.configure()
 
     def configure(self):
@@ -40,26 +40,31 @@ class PybulletSimulation:
         p.configureDebugVisualizer(lightPosition= (0,0,5))
         p.resetDebugVisualizerCamera(self.cam_param[0], self.cam_param[1], self.cam_param[2], self.cam_target)
     
-    def load_table(self, position = (0,0,-3.15), orientation=(0,0,0,1), scaling = 5):
-        """ Load a working table for the robot. """
+    def load_table(self, position = (0,0,-3.15), orientation=(0,0,0), scaling = 5):
+        """ Load a working table for the robot arm. """
+        orientation = p.getQuaternionFromEuler(np.deg2rad(orientation))
         p.loadURDF("table/table.urdf", position, orientation, flags=self.flags,globalScaling=scaling)
     
-    def load_tray(self,position = (0,0,0), orientation=(0,0,0,1), scaling = 5):
+    def load_tray(self,position = (0,0,0), orientation=(0,0,0), scaling = 5):
         """ Load a tray for holding objects. """
+        orientation = p.getQuaternionFromEuler(np.deg2rad(orientation))
         p.loadURDF("tray/traybox.urdf", position, orientation, flags=self.flags,globalScaling= scaling )
     
-    def load_lego(self,position = (0,0,1), orientation=(0,0,0,1), scaling = 5):
+    def load_lego(self,position = (0,0,1), orientation=(0,0,0), scaling = 5):
         """ Load a tray for holding objects. """
+        orientation = p.getQuaternionFromEuler(np.deg2rad(orientation))
         p.loadURDF("lego/lego.urdf",  position, orientation, flags=self.flags,globalScaling=scaling)
 
-    def load_random_objects(self, count_objects = 5, position = (0,0,1.5), orientation=(0,0,0,1), scaling = 5):
+    def load_random_objects(self, count_objects = 5, position = (0,0,1.5), orientation=(0,0,0), scaling = 5):
         """ Load random objects found in pybullet data. """
+        orientation = p.getQuaternionFromEuler(np.deg2rad(orientation))
         for num in np.random.randint(1000, size=count_objects):
             rand_position = np.array(position) + np.random.uniform(-1,1,3)
             p.loadURDF(f"random_urdfs/{num:03}/{num:03}.urdf", rand_position, orientation, flags=self.flags,globalScaling=scaling)
     
-    def load_common_objects(self, position = (0,0,1.5), orientation=(0,0,0,1), scaling = 7):
+    def load_common_objects(self, position=(0,0,1.5), orientation=(0,0,0), scaling = 7):
         """ Load common objects found in pybullet data. """
+        orientation = p.getQuaternionFromEuler(np.deg2rad(orientation))
         p.loadURDF("lego/lego.urdf",    np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
         p.loadURDF("sphere_small.urdf", np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
         p.loadURDF("domino/domino.urdf",np.array(position) + np.random.uniform(-1,1,3), orientation, flags=self.flags,globalScaling=scaling)
@@ -142,7 +147,6 @@ class Camera:
         pix_pos = np.array((x, y, z, 1))
         position = self.tran_pix_world @ pix_pos
         position /= position[3]
-
         return position[:3]
 
     def rgbd_2_world_batch(self, depth):
@@ -168,8 +172,6 @@ class Camera:
         pix_pos = np.array([x.flatten(), y.flatten(), z.flatten(), np.ones_like(z.flatten())]).T
         position = self.tran_pix_world @ pix_pos.T
         position = position.T
-        # print(position)
 
         position[:, :] /= position[:, 3:4]
-
         return position[:, :3].reshape(*x.shape, -1)

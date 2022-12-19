@@ -12,16 +12,16 @@ import os
 class RobotArm:
     """ Class to easily create, import and interact with robotic arm."""
 
-    def __init__(self, position=(0, 0, 0), orientation=(0, 0, 0, 1), name='my_robot', ik_function=None,fps=60, 
+    def __init__(self, position=(0, 0, 0), orientation=(0, 0, 0), name='my_robot_arm', ik_function=None, fps=60, 
                     joint_forces=1000, scaling=1, use_dynamics=True, use_draw_trajectory=True, use_display_pos_and_orn=False):
         """ Initialise all the robot variables and connect to the pybullet simulation.
 
             Parameters
             ----------
-            position : tuple
+            position : tuple (x,y,z)
                 Base position of the robot arm
-            orientation : tuple
-                Base orientation of the robot arm
+            orientation : tuple (r,p,y)
+                Base orientation of the robot arm in degrees
             name: string
                 Name of the robot arm
             ik_function: fuc(pos, orn)
@@ -43,10 +43,10 @@ class RobotArm:
         self.links, self.joint_variables, self.constraints= [],[],[]
         self.subs_joints, self.subs_additional = [],[]
         # load robot vars
-        self.robot = None
+        self.robot_arm = None
         self.file_head, self.name =  'robot_arms/' + name, name
         self.is_imported, self.is_foreign = False, False
-        self.position, self.orientation = position, orientation
+        self.position, self.orientation = position, p.getQuaternionFromEuler(np.deg2rad(orientation))
         self.scaling = scaling
         # joint motor control vars
         self.use_dynamics = use_dynamics
@@ -65,8 +65,8 @@ class RobotArm:
         # draw trajectory vars
         self.use_draw_trajectory = use_draw_trajectory
         self.trajectory_lifetime = 5
-        self.hasPrevPose = [False]*10
-        self.prevPose1, self.prevPose2 = [[0,0,0]]*10, [[0,0,0]]*10
+        self.has_prev_pose = [False]*10
+        self.prev_pose_1, self.prev_pose_2 = [[0,0,0]]*10, [[0,0,0]]*10
         # capture image vars
         self.capture_image_button = None
         self.prev_button_state = 2
@@ -85,7 +85,7 @@ class RobotArm:
         else:
             self.time_step = 1/fps
     
-    def add_pose_sliders(self, x_range=(-5, 5, 1), y_range=(-5, 5, 1), z_range=(-5, 5, 1)):
+    def add_pose_sliders(self, x_range, y_range, z_range):
         """ Adds position and orientation sliders to pybullet for selecting desired position and orientation of the end effector.
 
             Parameters
@@ -106,7 +106,7 @@ class RobotArm:
         """ Adds joint sliders to pybullet for controlling each joint where the range of the sliders is taken from the joint constrains. """
         self.joint_sliders = []
         for i in self.joint_ids:
-            joint_info = p.getJointInfo(self.robot, i)
+            joint_info = p.getJointInfo(self.robot_arm, i)
             if joint_info[2] == p.JOINT_PRISMATIC:
                 self.joint_sliders.append((False, p.addUserDebugParameter(f"D{i}", joint_info[8], joint_info[9], joint_info[8])))
             # convert slider range to degrees for rotational joins
@@ -116,31 +116,31 @@ class RobotArm:
     def add_joint_frame_lines(self):
         """ Adds frame lines to x and z axis to each joint."""
         self.joint_frames = []
-        if self.is_foreign is True:  # Adds frame lines to just the last joint if the robot is foreign
-            rot = np.array(p.getMatrixFromQuaternion(p.getLinkState(self.robot, self.last_joint_id)[5])).reshape(3, 3)
+        if self.is_foreign is True:  # Adds frame lines to just the last joint if the robot_arm is foreign
+            rot = np.array(p.getMatrixFromQuaternion(p.getLinkState(self.robot_arm, self.last_joint_id)[5])).reshape(3, 3)
             line_n, line_a = self.rotate_point(rot, (0.8, 0, 0)), self.rotate_point(rot, (0, 0, 0.8))
-            self.joint_frames.append(p.addUserDebugLine((0, 0, 0), line_n, parentObjectUniqueId=self.robot,
+            self.joint_frames.append(p.addUserDebugLine((0, 0, 0), line_n, parentObjectUniqueId=self.robot_arm,
                                         parentLinkIndex=self.last_joint_id, lineColorRGB=(0, 1, 1), lineWidth=2))
-            self.joint_frames.append(p.addUserDebugLine((0, 0, 0), line_a, parentObjectUniqueId=self.robot,
+            self.joint_frames.append(p.addUserDebugLine((0, 0, 0), line_a, parentObjectUniqueId=self.robot_arm,
                                         parentLinkIndex=self.last_joint_id, lineColorRGB=(1, 1, 0), lineWidth=2))
         else:
             for joint_id in self.joint_ids:
-                self.subs_joints[joint_id//2] = self.subs_joints[joint_id//2][0], p.getJointState(self.robot, joint_id)[0]
+                self.subs_joints[joint_id//2] = self.subs_joints[joint_id//2][0], p.getJointState(self.robot_arm, joint_id)[0]
             for joint in range(0, self.last_joint_id, 2):
                 transform = self.get_dh_joint_to_joint(joint//2, joint//2+1).subs(self.subs_joints+self.subs_additional).evalf()
                 line_n, _, line_a = frame_lines(transform, 0.8)
                 self.joint_frames.append(p.addUserDebugLine(line_n.T[0,:], line_n.T[1,:],
-                                            (1, 0, 0) if self.last_joint_id-2 != joint else (0, 1, 1), 2, 0, self.robot, joint))
+                                            (1, 0, 0) if self.last_joint_id-2 != joint else (0, 1, 1), 2, 0, self.robot_arm, joint))
                 self.joint_frames.append(p.addUserDebugLine(line_a.T[0,:],line_a.T[1,:],
-                                            (0, 0, 1) if self.last_joint_id-2 != joint else (1, 1, 0), 2, 0, self.robot, joint))
+                                            (0, 0, 1) if self.last_joint_id-2 != joint else (1, 1, 0), 2, 0, self.robot_arm, joint))
 
     def find_joint_ids(self):
         """ Goes trough each joint of the robot arm and saves the body and attachment joint if it is prismatic of revolute. """
         self.joint_ids = []
         add_attachment_joints = False
         add_constraints_if_foreign = False
-        for i in range(p.getNumJoints(self.robot)):
-            joint_info = p.getJointInfo(self.robot, i)
+        for i in range(p.getNumJoints(self.robot_arm)):
+            joint_info = p.getJointInfo(self.robot_arm, i)
             # start adding attachment joints if joint name is attachment_joint
             if joint_info[1] == b'attachment_joint' or add_attachment_joints:
                 if add_attachment_joints == False:
@@ -151,7 +151,7 @@ class RobotArm:
             else:
                 if (joint_info[2] in [p.JOINT_PRISMATIC, p.JOINT_REVOLUTE]):
                     self.joint_ids.append(i)
-                    # special case where if robot is foreign or there are not any constraints read them from the urdf
+                    # special case where if robot_arm is foreign or there are not any constraints read them from the urdf
                     if self.is_foreign and (len(self.constraints) == 0 or add_constraints_if_foreign):
                         add_constraints_if_foreign = True
                         self.constraints.append(
@@ -168,13 +168,13 @@ class RobotArm:
                 List of joint states to reset the arm to
         """
         for i, joint_id in enumerate(self.joint_ids):
-            joint_info = p.getJointInfo(self.robot, joint_id)
+            joint_info = p.getJointInfo(self.robot_arm, joint_id)
             if joint_states:
-                p.resetJointState(self.robot, joint_id, joint_states[i])
+                p.resetJointState(self.robot_arm, joint_id, joint_states[i])
             else: # set to lower limit of joint if prismatic or zero if revolute
-                p.resetJointState(self.robot, joint_id, joint_info[8] if joint_info[2] == p.JOINT_PRISMATIC else 0)
+                p.resetJointState(self.robot_arm, joint_id, joint_info[8] if joint_info[2] == p.JOINT_PRISMATIC else 0)
     
-    def load_robot(self):
+    def load_robot_arm(self):
         """ Load the robot arm in pybullet, find the joints, add joint frame lines and reset the joints. """
         if self.is_imported is False:
             subs = self.subs_joints + self.subs_additional
@@ -185,11 +185,12 @@ class RobotArm:
                 os.mkdir(f'{self.file_head}/')
             dh2urdf.save_urdf(f'{self.file_head}/{self.name}.urdf')
 
-        self.robot = p.loadURDF(f'{self.file_head}/{self.name}.urdf', self.position, self.orientation, 
-                                    useFixedBase=True, globalScaling=self.scaling)
+        self.robot_arm = p.loadURDF(f'{self.file_head}/{self.name}.urdf', self.position, self.orientation, 
+                                    useFixedBase=True, flags = p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES, globalScaling=self.scaling)
         self.find_joint_ids()
         self.add_joint_frame_lines()
         self.reset_joints()
+        self.joint_forces = self.joint_forces if type(self.joint_forces) in (list,tuple) else [self.joint_forces]*len(self.joint_ids)
         if self.attachment_joint_ids: # open the gripper so it works with move2point
             self.actuate_attachment(joint_targets = self.attachment_open_targets)
     
@@ -208,7 +209,7 @@ class RobotArm:
         """
         self.kinematics = kinematics
         self.use_orientation_ik = use_orientation_ik
-        self.load_robot()
+        self.load_robot_arm()
         if self.kinematics == 'forward':
             self.add_joint_sliders()
         elif self.kinematics == 'inverse':
@@ -220,6 +221,7 @@ class RobotArm:
             control the joints dynamically or just reset them to the new position and step trough all the modules of the simulation.
         """
         while (p.isConnected()):
+            st = time.time()
             p.stepSimulation()
             if self.kinematics == 'forward':
                 position = None # read the sliders for joint desired joints position
@@ -237,33 +239,33 @@ class RobotArm:
                 if self.ik_function: # use inverse kinematics function if it is provided 
                     joint_targets = self.ik_function(self.limit_pos_target(position), orientation if self.use_orientation_ik else None)
                 else:  # use the build in numerical ik and limit the joint and position targets
-                    joint_targets = p.calculateInverseKinematics(self.robot, self.last_joint_id, self.limit_pos_target(position),
+                    joint_targets = p.calculateInverseKinematics(self.robot_arm, self.last_joint_id, self.limit_pos_target(position),
                         orientation if self.use_orientation_ik else None, maxNumIterations=5)[:len(self.joint_ids)]
                     joint_targets = self.limit_joint_targets(joint_targets)
 
             if self.use_dynamics: 
-                p.setJointMotorControlArray(self.robot, self.joint_ids, p.POSITION_CONTROL, joint_targets, 
-                    forces= self.joint_forces if type(self.joint_forces) in (list,tuple) else [self.joint_forces]*len(joint_targets))
+                p.setJointMotorControlArray(self.robot_arm, self.joint_ids, p.POSITION_CONTROL, joint_targets, forces=self.joint_forces)
             else:
                 for i, joint_id in enumerate(self.joint_ids):
-                    p.resetJointState(self.robot, joint_id, joint_targets[i])
+                    p.resetJointState(self.robot_arm, joint_id, joint_targets[i])
            
             # modules for the simulation
             if self.attachment_joint_ids:
                 self.actuate_attachment()
 
             self.state_logging(self.kinematics)
-            link_state = p.getLinkState(self.robot, self.last_joint_id)
-            self.capture_image(link_state,self.camera_offset)
+            link_state = p.getLinkState(self.robot_arm, self.last_joint_id)
+            self.capture_image(link_state, self.camera_offset, use_gui=True)
 
             if self.use_draw_trajectory:
                 self.draw_trajectory(link_state[4], position, self.trajectory_lifetime)
             if self.use_display_pos_and_orn:
                 self.display_pos_and_orn(link_state[4], link_state[5], self.last_joint_id)
-            if self.quit_simulation():
+            if self.quit_simulation(use_gui=True):
                 break
-            time.sleep(self.time_step)
-    
+            ex_time = self.time_step - (time.time() - st)
+            time.sleep(ex_time if ex_time > 0 else 0)
+
     def display_pos_and_orn(self, position, orientation, link_id):
         """ Display the position and orientation near the desired link.
         
@@ -280,9 +282,9 @@ class RobotArm:
         R, P, Y = np.rad2deg(p.getEulerFromQuaternion(orientation))
         if self.pose_text is None:
             self.pose_text = p.addUserDebugText(f"(x:{x:.2f} y:{y:.2f} z:{z:.2f}) (R:{R:.1f} P:{P:.1f} Y:{Y:.1f})", [0.5, 0, 0.5],
-                textColorRGB=[0, 0, 0], textSize=1, parentObjectUniqueId=self.robot, parentLinkIndex=link_id)
+                textColorRGB=[0, 0, 0], textSize=1, parentObjectUniqueId=self.robot_arm, parentLinkIndex=link_id)
         p.addUserDebugText(f"(x:{x:.2f} y:{y:.2f} z:{z:.2f}) (R:{R:.1f} P:{P:.1f} Y:{Y:.1f})", [0.5, 0, 0.5], textColorRGB=[0, 0, 0], 
-            textSize=1,parentObjectUniqueId=self.robot, parentLinkIndex=link_id, replaceItemUniqueId=self.pose_text)
+            textSize=1,parentObjectUniqueId=self.robot_arm, parentLinkIndex=link_id, replaceItemUniqueId=self.pose_text)
      
     def draw_trajectory(self, current, target=None, life_time=15, line_index=0):
         """ Draw the current and target trajectory where you can choose the life time of the lines and index to differentiate the lines.
@@ -296,26 +298,26 @@ class RobotArm:
             line_index: int
                 Index of the lines
         """
-        if (self.hasPrevPose[line_index] is True): # don't draw the first time 
+        if (self.has_prev_pose[line_index] is True): # don't draw the first time 
             if target:
-                p.addUserDebugLine(self.prevPose1[line_index], target, [0, 0, 0.3], 1.3, life_time)
-            p.addUserDebugLine(self.prevPose2[line_index], current, [1, 0, 0], 1.3, life_time)
-        self.prevPose1[line_index] = target
-        self.prevPose2[line_index] = current
-        self.hasPrevPose[line_index] = True
+                p.addUserDebugLine(self.prev_pose_1[line_index], target, [0, 0, 0.3], 1.3, life_time)
+            p.addUserDebugLine(self.prev_pose_2[line_index], current, [1, 0, 0], 1.3, life_time)
+        self.prev_pose_1[line_index] = target
+        self.prev_pose_2[line_index] = current
+        self.has_prev_pose[line_index] = True
     
-    def quit_simulation(self, quit_now = False):
+    def quit_simulation(self, use_gui = False):
         """ Adds button to pybullet to quit the simulation and returns conformation.
         
             Parameters
             ----------
-            quit_now: bool
-                Optional argument to quit the simulation trough code
+            use_gui: bool
+                Optional argument to choose how to quit the simulation
         """
-        if not quit_now and self.quit_button is None:
+        if use_gui and self.quit_button is None:
             self.quit_button = p.addUserDebugParameter("Quit Simulation",1,0,1)
         else:
-            if quit_now or p.readUserDebugParameter(self.quit_button) %2 == 0:
+            if not use_gui or p.readUserDebugParameter(self.quit_button) %2 == 0:
                 p.disconnect()
                 return True
             else:
@@ -346,32 +348,27 @@ class RobotArm:
                     self.change_attachment_force = False 
             # dynamically control the joints
             max_force, joint_stopped = 500, True
-            for joint_state in p.getJointStates(self.robot, self.attachment_joint_ids):
+            for joint_state in p.getJointStates(self.robot_arm, self.attachment_joint_ids):
                 if abs(joint_state[3]) < 100:
                     joint_stopped = False
             if (joint_stopped and joint_targets == self.attachment_close_targets) or self.change_attachment_force: 
                 self.change_attachment_force = True 
                 max_force = 50
-            p.setJointMotorControlArray(self.robot, joint_ids, p.POSITION_CONTROL, joint_targets, forces=[max_force]*len(joint_ids))
+            p.setJointMotorControlArray(self.robot_arm, joint_ids, p.POSITION_CONTROL, joint_targets, forces=[max_force]*len(joint_ids))
         else: # make at least 30 steps to close or open the attachment
             for step in range(30):
                 p.stepSimulation()
                 max_force, joint_stopped = 500, True
-                for joint_state in p.getJointStates(self.robot, self.attachment_joint_ids):
+                for joint_state in p.getJointStates(self.robot_arm, self.attachment_joint_ids):
                     if abs(joint_state[3]) < 100:
                         joint_stopped = False
                 if (joint_stopped and joint_targets == self.attachment_close_targets) or self.change_attachment_force: 
                     self.change_attachment_force = True 
                     max_force = 50 
-                p.setJointMotorControlArray(self.robot, joint_ids, p.POSITION_CONTROL, joint_targets, forces=[max_force]*len(joint_ids))
+                p.setJointMotorControlArray(self.robot_arm, joint_ids, p.POSITION_CONTROL, joint_targets, forces=[max_force]*len(joint_ids))
                 time.sleep(self.time_step)
-    
-    def set_attachment_targets(self, attachment_open_targets=(0, 0), attachment_close_targets=(0.3, -0.3)):
-        """ Set attachment open and close targets. """
-        self.attachment_open_targets = attachment_open_targets
-        self.attachment_close_targets = attachment_close_targets
 
-    def capture_image(self, link_state = None, camera_offset=(0, 0, 0.5), near=0.1, far=5, size=(320, 320), fov=40, capture_now=False):
+    def capture_image(self, link_state = None, camera_offset=(0, 0, 0.5), near=0.1, far=5, size=(320, 320), fov=40, use_gui=False):
         """ Capture image from the position and orientation of the link, in this case the image is taken in line of the z axis. 
             You can set all the parameters from here and there is an option to capture the image imminently and return the image.  
         
@@ -387,19 +384,19 @@ class RobotArm:
                 Size in pixels on the camera image
             fov: int 
                 Set the field of view of the camera
-            capture_now: bool
-                Optional argument to take the shot trough code
+            use_gui: bool
+                Optional argument to choose how to take a shot
         """
         if link_state is None:
-            link_state = p.getLinkState(self.robot, self.last_joint_id)
-        if capture_now is False:
+            link_state = p.getLinkState(self.robot_arm, self.last_joint_id)
+        if use_gui is True:
             if self.capture_image_button is None: # add button to capture image
                 self.capture_image_button = p.addUserDebugParameter("Capture Image", 1, 0, 1)
             else:
                 if p.readUserDebugParameter(self.capture_image_button) == self.prev_button_state:
                     self.prev_button_state += 1
-                    capture_now = True
-        if capture_now:
+                    use_gui = False
+        if use_gui is False:
             rot = np.array(p.getMatrixFromQuaternion(link_state[5])).reshape(3, 3)
             offset = self.rotate_point(rot, camera_offset)
             target = (link_state[4][0]+offset[0], link_state[4][1]+offset[1], link_state[4][2]+offset[2])
@@ -422,7 +419,7 @@ class RobotArm:
                 Enter the ids of the objects you like to log
         """
         if object_ids is None: # log just the robot arm
-            object_ids = [self.robot]
+            object_ids = [self.robot_arm]
 
         if start_stop is None:
             if self.record_button is None: # add button to start and stop logging
@@ -433,7 +430,8 @@ class RobotArm:
                         if not os.path.exists(f'{self.file_head}/logs/'):
                             os.mkdir(f'{self.file_head}/logs/') # make directory if it does not exist
                         self.log = p.startStateLogging(p.STATE_LOGGING_GENERIC_ROBOT,
-                            f"{self.file_head}/logs/{log_name}_{int(p.readUserDebugParameter(self.record_button)//2)}.txt", object_ids)
+                            f"{self.file_head}/logs/{log_name}_{self.rec_cnt}.txt", object_ids)
+                        self.rec_cnt += 1
                 elif self.log is not None:
                     p.stopStateLogging(self.log)
                     self.log = None
@@ -447,7 +445,7 @@ class RobotArm:
             else:
                 p.stopStateLogging(self.log)
     
-    def readLogFile(self, file_path):
+    def read_log_file(self, file_path):
         """ Read the file, decode the message and return the logs in a list. """
         f = open(file_path, 'rb')
         keys = f.readline().decode('utf8').rstrip('\n').split(',')
@@ -468,14 +466,14 @@ class RobotArm:
 
     def autocomplete_logs(self, log_names):
         """ Find similar files to the `log_names` parameter which can be one name or a list of names and return the combined logs. """
-        def sortKeyFunc(s): # sort using the last index in the file name
+        def sort_key_func(s): # sort using the last index in the file name
             return int(os.path.basename(s).split('_')[-1][:-4])
         log = []
         if type(log_names) != list:
             log_names = [log_names]
         for log_name in log_names:
-            for log_name_index in sorted(glob.glob(f'{self.file_head}/logs/'+f"{log_name}*.txt"), key=sortKeyFunc):
-                log += self.readLogFile(log_name_index)
+            for log_name_index in sorted(glob.glob(f'{self.file_head}/logs/'+f"{log_name}*.txt"), key=sort_key_func):
+                log += self.read_log_file(log_name_index)
         return log
 
     def replay_logs(self, log_names, skim_trough=True, object_ids=None):
@@ -491,7 +489,7 @@ class RobotArm:
                 Enter the ids of the objects in the log file 
         """
         if object_ids is None: # by default it is just the robot arm 
-            object_ids = [self.robot]
+            object_ids = [self.robot_arm]
 
         logs = self.autocomplete_logs(log_names)
         if not logs:
@@ -503,6 +501,7 @@ class RobotArm:
         else:
             step_index = -1
         while (p.isConnected()):
+            st = time.time()
             p.stepSimulation()
             if skim_trough:
                 step_index = int(p.readUserDebugParameter(step_index_param))
@@ -513,16 +512,20 @@ class RobotArm:
                 Id = record[2] # set object position and orientation 
                 p.resetBasePositionAndOrientation(Id, [record[3], record[4], record[5]], 
                                                       [record[6], record[7], record[8], record[9]])
+                jf_index = 0
                 for i in range(p.getNumJoints(Id)):
-                    qIndex = p.getJointInfo(Id, i)[3]
+                    joint_info = p.getJointInfo(Id, i)
+                    qIndex = joint_info[3] 
+                    if joint_info[1] == b'attachment_joint':
+                        break # break if joint is from attachment
                     if qIndex > -1:
                         if self.use_dynamics:
-                            p.setJointMotorControl2(Id, i, p.POSITION_CONTROL, record[qIndex - 7 + 17],
-                            force= self.joint_forces[i] if type(self.joint_forces) in (list,tuple) else self.joint_forces)
+                            p.setJointMotorControl2(Id, i, p.POSITION_CONTROL, record[qIndex - 7 + 17], force=self.joint_forces[jf_index])
+                            jf_index+=1
                         else:
                             p.resetJointState(Id, i, record[qIndex - 7 + 17])
 
-            link_state = p.getLinkState(self.robot,self.last_joint_id)
+            link_state = p.getLinkState(self.robot_arm,self.last_joint_id)
             if self.use_draw_trajectory:
                 self.draw_trajectory(link_state[4], life_time = self.trajectory_lifetime)
             if self.use_display_pos_and_orn:
@@ -530,9 +533,10 @@ class RobotArm:
 
             if step_index == recordNum / objectNum - 1 and skim_trough is False:
                 break # break condition for the last log
-            if skim_trough and self.quit_simulation():
+            if skim_trough and self.quit_simulation(use_gui=True):
                 break
-            time.sleep(self.time_step)
+            ex_time = self.time_step - (time.time() - st)
+            time.sleep(ex_time if ex_time > 0 else 0)
 
     def convert_logs_to_prg(self, log_names, file_name):
         """ Find similar files to the `log_names` parameter and convert the logs to RT Toolbox 2 program file.
@@ -559,8 +563,8 @@ class RobotArm:
         file.write(pgr_string)
         file.close() 
 
-    def import_robot(self, file_path='robot_arms/my_robot/my_robot.urdf'):
-        """ Import robot generated from this script. Save the name and file head form the file path and read the dh parameters 
+    def import_robot_arm(self, file_path="robot_arms/my_robot_arm/my_robot_arm.urdf"):
+        """ Import robot arm generated from this script. Save the name and file head form the file path and read the dh parameters 
             and constraints from the file."""
         self.is_imported = True
         file_head, tail = os.path.split(file_path)
@@ -581,8 +585,8 @@ class RobotArm:
             else:
                 self.add_fixed_joint(float(dh_list[1]),float(dh_list[2]),float(dh_list[3]),float(dh_list[4]),int(dh_list[9]))
     
-    def import_foreign_robot(self, file_path, scaling=5):
-        """ Import a custom urdf robot, set the scaling and save the name and file head form the file path."""
+    def import_foreign_robot_arm(self, file_path, scaling=5):
+        """ Import a custom urdf robot arm, set the scaling and save the name and file head form the file path."""
         self.is_imported = self.is_foreign = True
         self.scaling = scaling
         file_head, tail = os.path.split(file_path)
@@ -695,12 +699,12 @@ class RobotArm:
             log_move: bool
                 Optional parameter to log the moves
         """
-        self.hasPrevPose = [False]*5 # restart drawing trajectory
+        self.has_prev_pose = [False]*5 # restart drawing trajectory
         x1, y1, z1, R1, P1, Y1 = start
         x2, y2, z2, R2, P2, Y2 = end
         if log_move: # first move to point then start logging for cleaner log
             self.move2point((x1,y1,z1),(R1,P1,Y1)) 
-            self.hasPrevPose = [False]*5  
+            self.has_prev_pose = [False]*5  
             self.state_logging(f"move_{interpolation}_{start}_{end}"+ ('' if param is None else f"_{param}"),'start')
         rot_mat = rotation_matrix_from_euler_angles(np.deg2rad(plane),'xyz')
         if interpolation == 'linear':
@@ -757,35 +761,37 @@ class RobotArm:
         steps = 0 
         position = self.limit_pos_target(position)
         while (p.isConnected()):
+            st = time.time()
             if self.ik_function:
                 joint_targets = self.ik_function(position, orientation)
             else:
-                joint_targets = p.calculateInverseKinematics(self.robot,self.last_joint_id, 
+                joint_targets = p.calculateInverseKinematics(self.robot_arm,self.last_joint_id, 
                                     position, p.getQuaternionFromEuler(np.deg2rad(orientation)))[:len(self.joint_ids)]
                 joint_targets = self.limit_joint_targets(joint_targets)
 
             if self.use_dynamics:
-                p.setJointMotorControlArray(self.robot,self.joint_ids,p.POSITION_CONTROL,joint_targets,
-                forces= self.joint_forces if type(self.joint_forces) in (list,tuple) else [self.joint_forces]*len(joint_targets))
+                p.setJointMotorControlArray(self.robot_arm, self.joint_ids, p.POSITION_CONTROL,joint_targets, forces=self.joint_forces)
             else:
                 for i,joint_id in enumerate(self.joint_ids):
-                    p.resetJointState(self.robot,joint_id,joint_targets[i])
+                    p.resetJointState(self.robot_arm,joint_id,joint_targets[i])
+                    
             # modules for the simulation
-            link_state = p.getLinkState(self.robot,self.last_joint_id)
+            link_state = p.getLinkState(self.robot_arm,self.last_joint_id)
             if self.use_draw_trajectory:
                 self.draw_trajectory(link_state[4], position, self.trajectory_lifetime)
             if self.use_display_pos_and_orn:
                 self.display_pos_and_orn(link_state[4], link_state[5], self.last_joint_id)
 
             # end condition if the target and current joints are close or enough steps are completed
-            if self.use_dynamics and (np.allclose([p.getJointState(self.robot,joint_id)[0] for joint_id in self.joint_ids],
+            if self.use_dynamics and (np.allclose([p.getJointState(self.robot_arm,joint_id)[0] for joint_id in self.joint_ids],
                                         joint_targets,self.ik_joint_error) or steps > self.frames_to_complete):
                 break
             elif not self.use_dynamics and steps > 1: # without dynamics just wait one step
                 break   
             steps+=1
             p.stepSimulation() 
-            time.sleep(self.time_step)
+            ex_time = self.time_step - (time.time() - st)
+            time.sleep(ex_time if ex_time > 0 else 0)
         return True
     
     def set_dynamic_conditions(self, frames_to_complete=20, ik_joint_error = 0.01):
@@ -795,8 +801,13 @@ class RobotArm:
     
     def get_joint_states(self):
         """ Returns joints position, velocity and applied torque. """
-        return [(row[0],row[1],row[3]) for row in p.getJointStates(self.robot, self.joint_ids)]
+        return [(row[0],row[1],row[3]) for row in p.getJointStates(self.robot_arm, self.joint_ids)]
 
+    def set_attachment_targets(self, attachment_open_targets=(0, 0), attachment_close_targets=(0.3, -0.3)):
+        """ Set attachment open and close targets. """
+        self.attachment_open_targets = attachment_open_targets
+        self.attachment_close_targets = attachment_close_targets
+        
     def set_position_limits(self, x_min, x_max, y_min, y_max, z_min, z_max):
         """ Set lower and upper limits for each axis. """
         self.axis_limits = [(x_min,x_max), (y_min,y_max), (z_min,z_max)]
@@ -812,7 +823,7 @@ class RobotArm:
         return new_position
 
     def limit_joint_targets(self, joint_targets):
-        """ Limit the joint targets to the constraints of the robot. """
+        """ Limit the joint targets to the constraints of the robot arm. """
         new_joint_targets = []
         for i,joint in enumerate(joint_targets):
             new_joint_targets.append(np.clip(joint, self.constraints[i][1], self.constraints[i][2]))

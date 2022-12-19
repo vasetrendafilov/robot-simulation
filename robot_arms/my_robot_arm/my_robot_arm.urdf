@@ -1,0 +1,389 @@
+<!-- DH Parameters and constraints
+      Name     theta         d         a     alpha    effort     lower     upper  velocity    visual
+  revolute       0.0       0.0       0.0       0.0        10   -3.1416    3.1416       2.6         1
+ prismatic       0.0       0.0       0.0   -1.5708        10       0.7         3       2.6         1
+ prismatic       0.0       0.0       0.0       0.0        10       0.7         3       2.6         1
+  revolute       0.0       0.0       0.0    1.5708        10   -3.1416    3.1416       2.6         1
+  revolute       0.0       0.0       0.0   -1.5708        10   -3.1416    3.1416       2.6         1
+  revolute       0.0       0.0       2.0       0.0        10   -3.1416    3.1416       2.6         1
+-->
+<robot name='robot_arm'>
+	<material name='grey'>
+		<color rgba='0.6 0.6 0.6 1'/>
+	</material>
+	<material name='white'>
+		<color rgba='1 1 1 1'/>
+	</material>
+	<link name='a0'>
+		<visual>
+			<origin rpy='0 0 0' xyz='0 0 0'/>
+			<geometry>
+				<cylinder length='0.7' radius='0.43'/>
+			</geometry>
+			<material name='grey'/>
+		</visual>
+	</link>
+	<link name='l0'>
+		<visual>
+			<origin rpy='0 0 0' xyz='0.0 0.0 0.0'/>
+			<geometry>
+				<cylinder length='0.0' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+	</link>
+	<joint name='move_l0_from_a0' type='revolute'>
+		<parent link='a0'/>
+		<child link='l0'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+		<limit effort='10' lower='-3.141592653589793' upper='3.141592653589793' velocity='2.6'/>
+	</joint>
+	<link name='a1'>
+		<visual>
+			<origin rpy='0 0 0' xyz='0 0 0'/>
+			<geometry>
+				<cylinder length='0.7' radius='0.43'/>
+			</geometry>
+			<material name='grey'/>
+		</visual>
+	</link>
+	<joint name='fix_a1_to_l0' type='fixed'>
+		<parent link='l0'/>
+		<child link='a1'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+	</joint>
+	<link name='l1'>
+		<visual>
+			<origin rpy='0 0 0' xyz='0.0 0.0 0.0'/>
+			<geometry>
+				<cylinder length='0.0' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+		<visual>
+			<origin rpy='0 0 0' xyz='0 0 -1.225'/>
+			<geometry>
+				<cylinder length='3' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+	</link>
+	<joint name='move_l1_from_a1' type='prismatic'>
+		<parent link='a1'/>
+		<child link='l1'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+		<limit effort='10' lower='0.7' upper='3' velocity='2.6'/>
+	</joint>
+	<link name='a2'>
+		<visual>
+			<origin rpy='-1.57079632679490 0 0' xyz='0 0 0'/>
+			<geometry>
+				<cylinder length='0.7' radius='0.43'/>
+			</geometry>
+			<material name='grey'/>
+		</visual>
+	</link>
+	<joint name='fix_a2_to_l1' type='fixed'>
+		<parent link='l1'/>
+		<child link='a2'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+	</joint>
+	<link name='l2'>
+		<visual>
+			<origin rpy='0 0 0' xyz='0.0 0.0 0.0'/>
+			<geometry>
+				<cylinder length='0.0' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+		<visual>
+			<origin rpy='0 0 0' xyz='0 0 -1.225'/>
+			<geometry>
+				<cylinder length='3' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+	</link>
+	<joint name='move_l2_from_a2' type='prismatic'>
+		<parent link='a2'/>
+		<child link='l2'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='-1.57079632679490 0 0' xyz='0 0 0'/>
+		<limit effort='10' lower='0.7' upper='3' velocity='2.6'/>
+	</joint>
+	<link name='a3'>
+		<visual>
+			<origin rpy='0 0 0' xyz='0 0 0'/>
+			<geometry>
+				<cylinder length='0.7' radius='0.43'/>
+			</geometry>
+			<material name='grey'/>
+		</visual>
+	</link>
+	<joint name='fix_a3_to_l2' type='fixed'>
+		<parent link='l2'/>
+		<child link='a3'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+	</joint>
+	<link name='l3'>
+		<visual>
+			<origin rpy='0 0 0' xyz='0.0 0.0 0.0'/>
+			<geometry>
+				<cylinder length='0.0' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+	</link>
+	<joint name='move_l3_from_a3' type='revolute'>
+		<parent link='a3'/>
+		<child link='l3'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+		<limit effort='10' lower='-3.141592653589793' upper='3.141592653589793' velocity='2.6'/>
+	</joint>
+	<link name='a4'>
+		<visual>
+			<origin rpy='1.57079632679490 0 0' xyz='0 0 0'/>
+			<geometry>
+				<cylinder length='0.7' radius='0.43'/>
+			</geometry>
+			<material name='grey'/>
+		</visual>
+	</link>
+	<joint name='fix_a4_to_l3' type='fixed'>
+		<parent link='l3'/>
+		<child link='a4'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+	</joint>
+	<link name='l4'>
+		<visual>
+			<origin rpy='0 0 0' xyz='0.0 0.0 0.0'/>
+			<geometry>
+				<cylinder length='0.0' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+	</link>
+	<joint name='move_l4_from_a4' type='revolute'>
+		<parent link='a4'/>
+		<child link='l4'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='1.57079632679490 0 0' xyz='0 0 0'/>
+		<limit effort='10' lower='-3.141592653589793' upper='3.141592653589793' velocity='2.6'/>
+	</joint>
+	<link name='a5'>
+		<visual>
+			<origin rpy='-1.57079632679490 0 0' xyz='0 0 0'/>
+			<geometry>
+				<cylinder length='0.7' radius='0.43'/>
+			</geometry>
+			<material name='grey'/>
+		</visual>
+	</link>
+	<joint name='fix_a5_to_l4' type='fixed'>
+		<parent link='l4'/>
+		<child link='a5'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+	</joint>
+	<link name='l5'>
+		<visual>
+			<origin rpy='-0.0 1.5707963267948966 0.0' xyz='1.0 0.0 0.0'/>
+			<geometry>
+				<cylinder length='2.0' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+	</link>
+	<joint name='move_l5_from_a5' type='revolute'>
+		<parent link='a5'/>
+		<child link='l5'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='-1.57079632679490 0 0' xyz='0 0 0'/>
+		<limit effort='10' lower='-3.141592653589793' upper='3.141592653589793' velocity='2.6'/>
+	</joint>
+	<link name='a6'>
+		<visual>
+			<origin rpy='0 0 0' xyz='2.00000000000000 0 0'/>
+			<geometry>
+				<cylinder length='0.7' radius='0.43'/>
+			</geometry>
+			<material name='grey'/>
+		</visual>
+	</link>
+	<joint name='fix_a6_to_l5' type='fixed'>
+		<parent link='l5'/>
+		<child link='a6'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='0 0 0'/>
+	</joint>
+	<link name='l6'>
+		<visual>
+			<origin rpy='0 0 0' xyz='0.0 0.0 0.0'/>
+			<geometry>
+				<cylinder length='0.0' radius='0.3'/>
+			</geometry>
+			<material name='white'/>
+		</visual>
+	</link>
+	<joint name='move_l6_from_a6' type='fixed'>
+		<parent link='a6'/>
+		<child link='l6'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0 0 0' xyz='2.00000000000000 0 0'/>
+	</joint>
+	<joint name='attachment_joint' type='fixed'>
+		<parent link='l6'/>
+		<child link='base'/>
+		<axis xyz='0 0 1'/>
+		<origin rpy='0.0 -1.5707963267948966 0.0' xyz='0 0 0.3'/>
+	</joint>
+  <link name="base">
+  <inertial>
+    <mass value="1"/>
+    <inertia ixx="100" ixy="0" ixz="0" iyy="100" iyz="0" izz="100" />
+    <origin/>
+  </inertial>
+    <visual>
+      <geometry>
+        <cylinder length='0.15' radius='0.43'/>
+      </geometry>
+      <origin rpy="0 -1.57 0" xyz="0.125 0 0"/>
+      <material name="white">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+  <collision>
+      <origin rpy="0 -1.57 0" xyz="0.125 0 0"/>
+    <geometry>
+         <cylinder length='0.15' radius='0.43'/>
+    </geometry>
+    <contact_coefficients mu="0" kp="1000.0" kd="1.0"/>
+  </collision>
+  </link>
+  
+  <joint name="left_gripper_joint" type="revolute">
+    <axis xyz="0 0 1"/>
+    <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
+    <origin rpy="0 0 0" xyz="0.22 0.1 0"/>
+    <parent link="base"/>
+    <child link="left_gripper"/>
+  </joint>
+
+  <link name="left_gripper">
+    <contact>
+      <lateral_friction value="1.0"/>
+      <spinning_friction value="1.5"/>
+    </contact>
+    <visual>
+      <origin rpy="0.0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_collision.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0.0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_collision.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <joint name="left_tip_joint" type="fixed">
+    <parent link="left_gripper"/>
+    <child link="left_tip"/>
+  </joint>
+
+  <link name="left_tip">
+    <contact>
+      <lateral_friction value="1.0"/>
+      <spinning_friction value="1.5"/>
+    </contact>
+    <visual>
+      <origin rpy="0.0 0 0" xyz="0.3 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_tip.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </visual>
+    <collision>
+     <origin rpy="0.0 0 0" xyz="0.3 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_tip.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <joint name="right_gripper_joint" type="revolute">
+    <axis xyz="0 0 -1"/>
+    <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
+    <origin rpy="0 0 0" xyz="0.22 -0.1 0"/>
+    <parent link="base"/>
+    <child link="right_gripper"/>
+  </joint>
+
+  <link name="right_gripper">
+    <contact>
+      <lateral_friction value="1.0"/>
+      <spinning_friction value="1.5"/>
+    </contact>
+    <visual>
+      <origin rpy="-3.1415 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_collision.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </visual>
+         <collision>
+      <origin rpy="-3.1415 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_collision.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <joint name="right_tip_joint" type="fixed">
+    <parent link="right_gripper"/>
+    <child link="right_tip"/>
+  </joint>
+
+  <link name="right_tip">
+    <contact>
+      <lateral_friction value="1.0"/>
+      <spinning_friction value="1.5"/>
+    </contact>
+    <visual>
+      <origin rpy="-3.1415 0 0" xyz="0.3 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_tip.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </visual>
+	  <collision>
+    <origin rpy="-3.1415 0 0" xyz="0.3 0 0"/>
+      <geometry>
+        <mesh filename="attachments/revolute_gripper/l_finger_tip.stl" scale="5.7 5.7 5.7"/>
+      </geometry>
+    </collision>
+
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+</robot>

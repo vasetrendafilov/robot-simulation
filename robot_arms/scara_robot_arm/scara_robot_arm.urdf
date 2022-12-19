@@ -5,7 +5,7 @@
  prismatic       0.0       0.0       0.0       0.0        10       0.7         3       2.6         1
   revolute       0.0       0.0       0.0       0.0        10   -3.1416    3.1416       2.6         1
 -->
-<robot name='robot'>
+<robot name='robot_arm'>
 	<material name='grey'>
 		<color rgba='0.6 0.6 0.6 1'/>
 	</material>
