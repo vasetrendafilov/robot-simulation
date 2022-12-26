@@ -63,7 +63,7 @@
 ![Demo](images/demo.png)
 
 Tha main goal of this project is to create a robot arm simulator where you can easily create or import an existing Unified Robot Description Format urdf, and interact with the robot in a simulated world with generated obstacles and challenges. The simulator I am using is `pybullet` which comes with all the necessary components to build an extensive and complicated simulated world. The backbone for creating the robot arm is made with `sympy` and the all the utilities are pulled from [fundamentals-of-robotics](https://gitlab.com/feeit-freecourseware/fundamentals-of-robotics). There are also dedicated packages for building the world around the robot arm and converting the Denavit–Hartenberg DH parameters to urdf so it can be imported in the simulation. In the `robot_arms/` section there
-are real arms like [panda](https://www.franka.de/) and [xarm](https://www.ufactory.cc/xarm-collaborative-robot). Also there is the  Mitsubishi RV-2F-Q arm where the program can also convert the logs to RT Toolbox program file and run the program on the real arm.
+are real arms like [panda](https://www.franka.de/) and [xarm](https://www.ufactory.cc/xarm-collaborative-robot). Also there is the  Mitsubishi RV-2F-Q arm where the program can also convert the logs to RT Toolbox program file and run the program on the real arm. There is also a bachelor thesis for the project in the folder `diplomska/` where the project is explained in more details.
 
 ### Built With
 
@@ -237,8 +237,8 @@ Using the PybulletSimulation class in `pybullet_sim.py` you can make a new funct
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
-* [fundamentals-of-robotics](https://gitlab.com/feeit-freecourseware/fundamentals-of-robotics) as the base for this project
-* [DH2Urdf](https://akintokinematics.com/automatic-urdf-generation-from-dh-parameters/) improvement on this project
+* [fundamentals-of-robotics](https://gitlab.com/feeit-freecourseware/fundamentals-of-robotics) used as a base for creating a modular arm and calculating DH matrix 
+* [DH2Urdf](https://akintokinematics.com/automatic-urdf-generation-from-dh-parameters/) improvement on DH to urdf conversion
 * [melfa_robot](https://github.com/tork-a/melfa_robot) copied and changed urdf to work with Mitsubishi RV-2F-Q arm
 
 <!-- LICENSE -->
